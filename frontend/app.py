@@ -10,7 +10,10 @@ import os
 import json
 
 # Configuration
-API_BASE_URL = "http://localhost:8000/api"
+try:
+    API_BASE_URL = st.secrets.get("API_BASE_URL", os.getenv("API_BASE_URL", "http://localhost:8000/api"))
+except:
+    API_BASE_URL = os.getenv("API_BASE_URL", "http://localhost:8000/api")
 
 # Try multiple possible paths for profiles
 import os
