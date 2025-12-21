@@ -1,0 +1,31 @@
+# FastAPI Backend Requirements
+
+# Core Framework
+fastapi==0.109.0
+uvicorn[standard]==0.27.0
+pydantic==2.5.3
+pydantic-settings==2.1.0
+
+# Database
+sqlalchemy==2.0.25
+alembic==1.13.1
+
+# HTTP & API
+httpx==0.26.0
+requests==2.31.0
+beautifulsoup4==4.12.3
+
+# AI/ML
+google-generativeai==0.3.2
+
+# Utilities
+python-dotenv==1.0.0
+python-multipart==0.0.6
+python-jose[cryptography]==3.3.0
+
+# Caching
+cachetools==5.3.2
+
+# Testing
+pytest==7.4.4
+pytest-asyncio==0.23.3
