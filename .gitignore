@@ -1,0 +1,62 @@
+# Create: .gitignore
+```
+```
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+.venv/
+*.egg-info/
+dist/
+build/
+
+# Environment variables - CRITICAL!
+.env
+*.env
+.env.local
+backend/.env
+frontend/.env
+
+# API Keys - NEVER commit!
+*.key
+secrets/
+config/secrets.py
+
+# Database
+*.db
+*.sqlite
+*.sqlite3
+
+# User Data - Privacy!
+user_profiles/*.json
+!user_profiles/*.json.example
+!user_profiles/README.md
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+logs/
+
+# Streamlit
+.streamlit/secrets.toml
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Node (if any)
+node_modules/
