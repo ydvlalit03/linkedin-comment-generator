@@ -1,0 +1,100 @@
+{
+  "basic_info": {
+    "name": "Vidhant Jain",
+    "headline": "Product Manager | AI Enthusiast | Building Next-Gen Solutions",
+    "about": "Passionate about building products that solve real problems. Currently focused on AI/ML applications in product development. Love exploring new technologies and sharing learnings with the community.",
+    "location": "Jaipur, Rajasthan, India",
+    "profile_url": "https://linkedin.com/in/vidhant-jain"
+  },
+  "professional": {
+    "expertise_areas": [
+      "Product Management",
+      "Artificial Intelligence",
+      "Machine Learning",
+      "SaaS Products",
+      "Growth Strategy",
+      "Python Development"
+    ],
+    "experience": [
+      {
+        "title": "Product Manager",
+        "company": "TechCorp",
+        "duration": "2023 - Present",
+        "description": "Leading AI product development and strategy"
+      },
+      {
+        "title": "Senior Product Analyst",
+        "company": "StartupXYZ",
+        "duration": "2021 - 2023",
+        "description": "Data-driven product decisions and growth"
+      }
+    ],
+    "skills": [
+      "Python",
+      "Product Strategy",
+      "AI/ML",
+      "Data Analysis",
+      "User Research",
+      "Agile",
+      "Leadership",
+      "Strategic Planning"
+    ]
+  },
+  "writing_style": {
+    "tone": "professional-casual",
+    "formality_score": 0.5,
+    "avg_comment_length": 35,
+    "sentence_length_variation": "high",
+    "emoji_usage": "moderate",
+    "common_phrases": [
+      "Here's the thing",
+      "In my experience",
+      "That's spot on",
+      "This resonates",
+      "Been there"
+    ],
+    "typical_openings": [
+      "Love this.",
+      "Great point about",
+      "This resonates.",
+      "Exactly.",
+      "Yep."
+    ],
+    "contraction_frequency": "frequent",
+    "burstiness_level": "high",
+    "engagement_patterns": {
+      "asks_questions": true,
+      "shares_experiences": true,
+      "gives_advice": false
+    },
+    "personality_traits": [
+      "analytical",
+      "direct",
+      "helpful",
+      "authentic",
+      "curious"
+    ]
+  },
+  "real_comments": [
+    "Love this. The part about timing hit different. We learned that the hard way too.",
+    "That's exactly what we saw. Cash flow beats everything else when reality hits.",
+    "Been there. The pivot saved us but man, those 3 months were brutal.",
+    "This. The authenticity piece is what most people miss early on.",
+    "Yep. Learned this after our first failed launch. Now it's rule #1.",
+    "Great point about user research. Spent 6 months building the wrong thing once.",
+    "The AI integration part is interesting. How'd you handle the compute costs?",
+    "This resonates. Took us 2 years to figure out our actual value prop.",
+    "Timing > idea. Painful lesson but the most important one.",
+    "Cash flow doesn't care about your roadmap. Hard truth."
+  ],
+  "analysis": {
+    "total_comments_analyzed": 10,
+    "analyzed_date": "2024-12-20T13:00:00",
+    "confidence_score": 0.9
+  },
+  "_metadata": {
+    "username": "vidhant-jain",
+    "last_updated": "2024-12-20T13:00:00",
+    "version": "1.0"
+  }
+}
