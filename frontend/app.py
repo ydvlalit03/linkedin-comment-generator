@@ -7,32 +7,12 @@ import requests
 from datetime import datetime
 import time
 import os
-import json
 
 # Configuration
 try:
     API_BASE_URL = st.secrets.get("API_BASE_URL", os.getenv("API_BASE_URL", "http://localhost:8000/api"))
 except:
     API_BASE_URL = os.getenv("API_BASE_URL", "http://localhost:8000/api")
-
-# Try multiple possible paths for profiles
-import os
-POSSIBLE_PROFILE_DIRS = [
-    "../backend/user_profiles",  # When running from frontend/
-    "backend/user_profiles",     # When running from root
-    "user_profiles",             # When running from backend/
-    "/Users/aadi/comment-analyser/linkedin-comment-generator/backend/user_profiles"  # Absolute path
-]
-
-# Find the correct path
-PROFILES_DIR = None
-for path in POSSIBLE_PROFILE_DIRS:
-    if os.path.exists(path):
-        PROFILES_DIR = path
-        break
-
-if not PROFILES_DIR:
-    PROFILES_DIR = "../backend/user_profiles"  # Default fallback
 
 # Page config
 st.set_page_config(
@@ -82,28 +62,16 @@ st.markdown("""
 
 
 def get_available_profiles():
-    """Get list of available JSON profiles"""
+    """Get list of available JSON profiles from backend API"""
     try:
-        if not os.path.exists(PROFILES_DIR):
+        response = requests.get(f"{API_BASE_URL}/user/profiles/available", timeout=5)
+        if response.status_code == 200:
+            data = response.json()
+            return data.get('profiles', [])
+        else:
             return []
-        
-        profiles = []
-        for filename in os.listdir(PROFILES_DIR):
-            if filename.endswith('.json'):
-                filepath = os.path.join(PROFILES_DIR, filename)
-                try:
-                    with open(filepath, 'r') as f:
-                        data = json.load(f)
-                        profiles.append({
-                            'filename': filename,
-                            'username': filename.replace('.json', ''),
-                            'name': data.get('basic_info', {}).get('name', 'Unknown'),
-                            'headline': data.get('basic_info', {}).get('headline', '')
-                        })
-                except:
-                    continue
-        return profiles
-    except:
+    except Exception as e:
+        st.error(f"Error fetching profiles: {str(e)}")
         return []
 
 
@@ -164,14 +132,14 @@ def show_home_page():
         st.markdown("""
         ### 🎯 Target Data
         - **Source:** RapidAPI (Real-time)
-        - **Fetches:** 60+ recent posts
+        - **Fetches:** Recent posts (30 days)
         - **Quality:** 100% real data
         """)
     
     with col3:
         st.markdown("""
         ### 💬 AI Generation
-        - **Engine:** Gemini 1.5 Flash
+        - **Engine:** Gemini 2.0 Flash
         - **Output:** 3 variations
         - **Style:** Matches YOUR voice
         """)
@@ -184,7 +152,7 @@ def show_home_page():
     st.info("""
     **No More Scraping Your Profile!**
     
-    1. 📁 **Select your saved profile** (vidhant-jain.json)
+    1. 📁 **Select your saved profile** (from dropdown)
     2. 🎯 **Enter target's LinkedIn URL** (we fetch their REAL posts via RapidAPI)
     3. 💬 **Generate comments** that match YOUR writing style
     
@@ -200,7 +168,7 @@ def show_home_page():
 
 
 def show_profile_selection():
-    """Profile selection from JSON files"""
+    """Profile selection from JSON files via backend API"""
     st.markdown('<p class="main-header">Select Your Profile</p>', unsafe_allow_html=True)
     
     # Check if already selected
@@ -235,15 +203,30 @@ def show_profile_selection():
     st.markdown("### Available Profiles")
     st.write("Select a profile that has your saved writing style:")
     
-    profiles = get_available_profiles()
+    with st.spinner("Loading profiles from backend..."):
+        profiles = get_available_profiles()
     
     if not profiles:
         st.warning("⚠️ No profiles found in `backend/user_profiles/`")
         st.info("""
         **To create a profile:**
         1. Create a JSON file: `backend/user_profiles/your-name.json`
-        2. Use the template from `vidhant-jain.json`
-        3. Add your info and real comment examples
+        2. Use the template structure:
+        ```json
+        {
+          "basic_info": {
+            "name": "Your Name",
+            "headline": "Your Title",
+            "profile_url": "https://linkedin.com/in/your-username"
+          },
+          "writing_style": {
+            "tone": "casual",
+            "avg_comment_length": 40
+          },
+          "real_comments": ["example1", "example2"]
+        }
+        ```
+        3. Push to GitHub or restart backend
         4. Refresh this page
         """)
         return
@@ -265,7 +248,8 @@ def show_profile_selection():
                         try:
                             response = requests.post(
                                 f"{API_BASE_URL}/user/profile",
-                                json={"linkedin_url": profile['username']}
+                                json={"linkedin_url": profile['profile_url']},
+                                timeout=10
                             )
                             
                             if response.status_code == 200:
@@ -280,7 +264,8 @@ def show_profile_selection():
                                 time.sleep(1)
                                 st.rerun()
                             else:
-                                st.error(f"Error: {response.json().get('detail', 'Unknown error')}")
+                                error_detail = response.json().get('detail', 'Unknown error')
+                                st.error(f"Error: {error_detail}")
                         except Exception as e:
                             st.error(f"Error: {str(e)}")
             
@@ -314,7 +299,7 @@ def show_comment_generator():
     with col1:
         fetch_button = st.button("🎯 Fetch Posts", type="primary", use_container_width=True)
     with col2:
-        st.caption("This will fetch 60+ real posts from their profile")
+        st.caption("This will fetch recent posts from their profile (last 30 days)")
     
     if fetch_button:
         if not target_url:
@@ -329,7 +314,7 @@ def show_comment_generator():
                         "user_id": st.session_state.user_id,
                         "target_url": target_url
                     },
-                    timeout=30
+                    timeout=60
                 )
                 
                 if response.status_code == 200:
@@ -350,7 +335,7 @@ def show_comment_generator():
                         """)
                         return
                     
-                    st.session_state.target_id = data['target_id']
+                    st.session_state.target_id = data.get('target_id')
                     st.session_state.target_name = data['target_name']
                     st.session_state.target_headline = data['target_headline']
                     st.session_state.posts = data['posts']
@@ -377,7 +362,7 @@ def show_comment_generator():
         with col1:
             sort_by = st.selectbox("Sort by", ["Recent", "Most Liked", "Most Commented"])
         with col2:
-            show_count = st.slider("Show posts", 5, 20, 10)
+            show_count = st.slider("Show posts", 5, min(20, len(st.session_state.posts)), min(10, len(st.session_state.posts)))
         
         # Sort posts
         posts = st.session_state.posts[:show_count]
@@ -386,7 +371,7 @@ def show_comment_generator():
         for i, post in enumerate(posts, 1):
             with st.container():
                 st.markdown(f"**Post {i}** • {post.get('posted_date', '')[:10]}")
-                st.text(post['content'][:200] + "...")
+                st.text(post['content'][:200] + ("..." if len(post['content']) > 200 else ""))
                 
                 col1, col2, col3, col4 = st.columns([2, 2, 2, 1])
                 
@@ -488,15 +473,16 @@ def show_stats():
             with col3:
                 st.metric("Posts Fetched", data['total_posts'])
             with col4:
-                st.metric("Comments Generated", data['total_generated_comments'])
+                st.metric("Comments Generated", data['total_comments'])
             
             st.markdown("---")
             
             # System info
             st.subheader("System Status")
             st.success("✅ Backend: Connected")
-            st.success("✅ RapidAPI: Active")
-            st.success("✅ Gemini: Ready")
+            st.success("✅ RapidAPI: Active (Target profiles only)")
+            st.success("✅ Gemini AI: Ready")
+            st.info("💡 User profiles loaded from JSON (no API calls)")
             
         else:
             st.error("Could not load statistics")

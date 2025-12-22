@@ -157,34 +157,83 @@ async def debug_database():
     }
 
 
+@app.get("/api/user/profiles/available")
+async def list_available_profiles():
+    """
+    List all available user profiles from user_profiles/ folder
+    For frontend dropdown selection
+    """
+    try:
+        profiles = linkedin_service.list_saved_profiles()
+        
+        # Load basic info for each profile
+        profile_list = []
+        for username in profiles:
+            saved_profile = linkedin_service.profile_manager.load_profile(username)
+            if saved_profile:
+                basic_info = saved_profile.get("basic_info", {})
+                profile_list.append({
+                    "username": username,
+                    "name": basic_info.get("name", username),
+                    "headline": basic_info.get("headline", ""),
+                    "profile_url": basic_info.get("profile_url", f"https://linkedin.com/in/{username}")
+                })
+        
+        return {
+            "profiles": profile_list,
+            "total": len(profile_list)
+        }
+        
+    except Exception as e:
+        logger.error(f"Error listing profiles: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @app.post("/api/user/profile", response_model=ProfileResponse)
 async def create_user_profile(request: ProfileRequest):
     """
-    Fetch and analyze user's LinkedIn profile
+    Load user profile from JSON file ONLY (no API calls)
     Returns user_id and writing style analysis
+    
+    User profiles must exist in user_profiles/ folder
     """
     try:
-        logger.info(f"Fetching profile: {request.linkedin_url}")
+        logger.info(f"Loading profile from JSON: {request.linkedin_url}")
         
-        # Step 1: Fetch profile data (checks JSON first, then API)
-        profile_data = linkedin_service.get_user_profile(request.linkedin_url)
-        if not profile_data:
-            raise HTTPException(status_code=404, detail="Profile not found or inaccessible")
+        # Step 1: Load from JSON ONLY (no API fallback)
+        username = linkedin_service._extract_username(request.linkedin_url)
+        saved_profile = linkedin_service.profile_manager.load_profile(username)
         
-        # Step 2: Fetch user's comment history
-        user_comments = linkedin_service.get_user_comments(request.linkedin_url)
+        if not saved_profile:
+            raise HTTPException(
+                status_code=404, 
+                detail=f"Profile '{username}' not found in user_profiles/ folder. Please add {username}.json file."
+            )
         
-        # Step 3: Analyze writing style
-        writing_style = profile_analyzer.analyze_user_writing_style(
-            profile_data, 
-            user_comments
-        )
+        logger.info(f"✓ Loaded profile: {username}")
+        
+        # Step 2: Convert from JSON format
+        profile_data = linkedin_service._convert_from_json_format(saved_profile)
+        
+        # Step 3: Get writing style from JSON (already analyzed)
+        writing_style = saved_profile.get("writing_style", {})
+        
+        # If no writing style in JSON, analyze now
+        if not writing_style:
+            logger.info("Writing style not in JSON, analyzing now...")
+            real_comments = saved_profile.get("real_comments", [])
+            comment_objects = [{"comment_text": c} for c in real_comments]
+            writing_style = profile_analyzer.analyze_user_writing_style(
+                profile_data,
+                comment_objects
+            )
         
         # Step 4: Store in database
         user_id = len(users_db) + 1
         users_db[user_id] = {
             "id": user_id,
             "linkedin_url": request.linkedin_url,
+            "username": username,
             "name": profile_data.get("name"),
             "headline": profile_data.get("headline"),
             "about": profile_data.get("about"),
@@ -199,13 +248,13 @@ async def create_user_profile(request: ProfileRequest):
             name=profile_data.get("name", ""),
             headline=profile_data.get("headline", ""),
             writing_style=writing_style,
-            message="Profile analyzed successfully"
+            message=f"Profile loaded from user_profiles/{username}.json"
         )
         
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Error creating user profile: {str(e)}")
+        logger.error(f"Error loading user profile: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
 
