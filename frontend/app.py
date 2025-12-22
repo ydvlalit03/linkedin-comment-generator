@@ -243,12 +243,12 @@ def show_profile_selection():
             
             with col2:
                 if st.button("Select", key=f"select_{profile['username']}"):
-                    # Load profile via API
+                    # Load profile via API using username (not profile_url)
                     with st.spinner("Loading profile..."):
                         try:
                             response = requests.post(
                                 f"{API_BASE_URL}/user/profile",
-                                json={"linkedin_url": profile['profile_url']},
+                                json={"linkedin_url": profile['username']},  # Send username directly
                                 timeout=10
                             )
                             
