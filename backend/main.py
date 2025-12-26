@@ -28,8 +28,65 @@ except Exception as e:
     linkedin_fetcher = LinkedInFetcher()
     logger.info("✓ Using MOCK data (fallback)")
 
-from app.services.profile_analyzer_gemini import ProfileAnalyzer
-from app.services.comment_generator_gemini import CommentGenerator
+# Import profile analyzer with fallback: Anthropic -> Gemini
+profile_analyzer = None
+analyzer_used = None
+
+# Try Anthropic first (Claude Opus 4 with extended thinking - best quality)
+if settings.AI_PROVIDER == "anthropic" or (hasattr(settings, 'ANTHROPIC_API_KEY') and settings.ANTHROPIC_API_KEY):
+    try:
+        from app.services.profile_analyzer_anthropic import ProfileAnalyzer
+        profile_analyzer = ProfileAnalyzer()
+        analyzer_used = "anthropic"
+        logger.info("✓ Using Anthropic Claude Opus 4 with Extended Thinking for analysis")
+    except Exception as e:
+        logger.warning(f"⚠️ Anthropic analyzer not available: {e}")
+
+# Fallback to Gemini
+if not profile_analyzer:
+    try:
+        from app.services.profile_analyzer_gemini import ProfileAnalyzer
+        profile_analyzer = ProfileAnalyzer()
+        analyzer_used = "gemini"
+        logger.info("✓ Using Gemini 2.0 Flash for analysis (fallback)")
+    except Exception as e:
+        logger.error(f"✗ No analyzer available: {e}")
+        raise RuntimeError("No profile analyzer could be initialized")
+
+# Import comment generator with fallback chain: Anthropic -> OpenAI -> Gemini
+comment_generator = None
+generator_used = None
+
+# Try Anthropic first (Claude Sonnet 4.5)
+if settings.AI_PROVIDER == "anthropic" or (hasattr(settings, 'ANTHROPIC_API_KEY') and settings.ANTHROPIC_API_KEY):
+    try:
+        from app.services.comment_generator_anthropic import CommentGenerator
+        comment_generator = CommentGenerator()
+        generator_used = "anthropic"
+        logger.info("✓ Using Anthropic Claude Sonnet 4.5 for comment generation")
+    except Exception as e:
+        logger.warning(f"⚠️ Anthropic not available: {e}")
+
+# Try OpenAI second
+if not comment_generator and (settings.AI_PROVIDER == "openai" or (hasattr(settings, 'OPENAI_API_KEY') and settings.OPENAI_API_KEY)):
+    try:
+        from app.services.comment_generator_openai import CommentGenerator
+        comment_generator = CommentGenerator()
+        generator_used = "openai"
+        logger.info("✓ Using OpenAI GPT for comment generation")
+    except Exception as e:
+        logger.warning(f"⚠️ OpenAI not available: {e}")
+
+# Fallback to Gemini (free)
+if not comment_generator:
+    try:
+        from app.services.comment_generator_gemini import CommentGenerator
+        comment_generator = CommentGenerator()
+        generator_used = "gemini"
+        logger.info("✓ Using Gemini (FREE) for comment generation")
+    except Exception as e:
+        logger.error(f"❌ All comment generators failed! {e}")
+        raise Exception("No comment generator available. Please configure at least one AI provider.")
 
 # Initialize FastAPI
 app = FastAPI(
@@ -49,7 +106,7 @@ app.add_middleware(
 
 # Initialize services (linkedin_service already initialized above)
 profile_analyzer = ProfileAnalyzer()
-comment_generator = CommentGenerator()
+# comment_generator initialized above with fallback chain
 
 
 # ============ Pydantic Models ============
@@ -124,9 +181,13 @@ async def health_check():
     return {
         "status": "healthy",
         "timestamp": datetime.now().isoformat(),
+        "ai_provider": generator_used,
+        "analyzer": analyzer_used,
+        "data_source": settings.DATA_SOURCE,
         "services": {
             "linkedin_fetcher": "connected",
-            "gemini_api": "connected"
+            "ai_generator": f"{generator_used} (active)",
+            "profile_analyzer": f"{analyzer_used} (active)"
         }
     }
 
@@ -198,10 +259,12 @@ async def create_user_profile(request: ProfileRequest):
     User profiles must exist in user_profiles/ folder
     """
     try:
-        logger.info(f"Loading profile from JSON: {request.linkedin_url}")
+        logger.info(f"📥 Received linkedin_url: '{request.linkedin_url}'")
         
         # Step 1: Load from JSON ONLY (no API fallback)
         username = linkedin_service._extract_username(request.linkedin_url)
+        logger.info(f"📝 Extracted username: '{username}'")
+        
         saved_profile = linkedin_service.profile_manager.load_profile(username)
         
         if not saved_profile:
@@ -215,18 +278,29 @@ async def create_user_profile(request: ProfileRequest):
         # Step 2: Convert from JSON format
         profile_data = linkedin_service._convert_from_json_format(saved_profile)
         
-        # Step 3: Get writing style from JSON (already analyzed)
-        writing_style = saved_profile.get("writing_style", {})
+        # Step 3: Analyze user writing style from complete JSON profile
+        logger.info("🔍 STAGE 1: Analyzing user writing style from JSON...")
         
-        # If no writing style in JSON, analyze now
-        if not writing_style:
-            logger.info("Writing style not in JSON, analyzing now...")
+        # Extract real comment examples from JSON
+        real_comments = saved_profile.get("real_comment_examples", [])
+        if not real_comments:
             real_comments = saved_profile.get("real_comments", [])
-            comment_objects = [{"comment_text": c} for c in real_comments]
-            writing_style = profile_analyzer.analyze_user_writing_style(
-                profile_data,
-                comment_objects
-            )
+        
+        # Convert to comment objects for analyzer
+        comment_objects = []
+        for comment in real_comments:
+            if isinstance(comment, dict):
+                comment_objects.append({"comment_text": comment.get("text", "")})
+            else:
+                comment_objects.append({"comment_text": str(comment)})
+        
+        # Call profile analyzer with COMPLETE JSON data
+        writing_style = profile_analyzer.analyze_user_writing_style(
+            saved_profile,  # Pass complete JSON profile
+            comment_objects
+        )
+        
+        logger.info(f"✅ User analysis complete: {len(writing_style)} fields extracted")
         
         # Step 4: Store in database
         user_id = len(users_db) + 1

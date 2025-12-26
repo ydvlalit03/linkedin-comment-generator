@@ -9,15 +9,26 @@ class Settings(BaseSettings):
     """Application settings with environment variable support"""
     
     # API Keys
-    GEMINI_API_KEY: str  # Free from Google AI Studio
+    GEMINI_API_KEY: Optional[str] = None  # Optional: Google AI Studio
+    OPENAI_API_KEY: Optional[str] = None  # OpenAI API key
+    ANTHROPIC_API_KEY: Optional[str] = None  # Anthropic Claude API key
     RAPIDAPI_KEY: Optional[str] = None  # RapidAPI for real LinkedIn data
+    PARAPHRASE_API_KEY: Optional[str] = None  # Paraphrase Genius for extra humanization
     RAPIDAPI_BASE_URL: str = "https://linkedin-scraper-api-real-time-fast-affordable.p.rapidapi.com"
     RAPIDAPI_HOST: str = "linkedin-scraper-api-real-time-fast-affordable.p.rapidapi.com"
     SCRAPERAPI_KEY: Optional[str] = None  # Legacy: Optional ScraperAPI
     
+    # AI Model Selection
+    # Options: 'openai', 'gemini', 'anthropic'
+    AI_PROVIDER: str = "anthropic"  # Default to Anthropic Claude
+    
+    # OpenAI Model Configuration
+    # Options: 'gpt-4o', 'gpt-4o-mini', 'gpt-4-turbo'
+    OPENAI_MODEL: str = "gpt-4o-mini"  # Cost-effective default
+    
     # Data Source Selection
     # Options: 'rapidapi', 'scraperapi', 'mock'
-    DATA_SOURCE: str = "rapidapi"  # Change to 'rapidapi' when you have the key
+    DATA_SOURCE: str = "mock"  # Change to 'rapidapi' when you have the key
     
     # Gemini Model Configuration (Two-tier architecture)
     # 

@@ -22,14 +22,33 @@ class UserProfileManager:
     - Analysis metadata
     """
     
-    def __init__(self, profiles_dir: str = "user_profiles"):
+    def __init__(self, profiles_dir: str = None):
+        # Use absolute path based on this file's location
+        if profiles_dir is None:
+            # Get the directory where this file is located
+            current_dir = os.path.dirname(os.path.abspath(__file__))
+            # Go up to app/ then backend/ then to user_profiles/
+            backend_dir = os.path.dirname(os.path.dirname(current_dir))
+            profiles_dir = os.path.join(backend_dir, "user_profiles")
+        
         self.profiles_dir = profiles_dir
         self._ensure_directory()
     
     def _ensure_directory(self):
         """Create profiles directory if it doesn't exist"""
-        os.makedirs(self.profiles_dir, exist_ok=True)
-        logger.info(f"User profiles directory: {self.profiles_dir}")
+        try:
+            os.makedirs(self.profiles_dir, exist_ok=True)
+            logger.info(f"✓ User profiles directory: {self.profiles_dir}")
+            
+            # List files for debugging
+            if os.path.exists(self.profiles_dir):
+                files = os.listdir(self.profiles_dir)
+                json_files = [f for f in files if f.endswith('.json')]
+                logger.info(f"✓ Found {len(json_files)} profile(s): {json_files}")
+            else:
+                logger.warning(f"⚠️ Profiles directory does not exist: {self.profiles_dir}")
+        except Exception as e:
+            logger.error(f"❌ Error with profiles directory: {e}")
     
     def save_profile(self, username: str, profile_data: Dict) -> bool:
         """
@@ -77,17 +96,21 @@ class UserProfileManager:
             filepath = self._get_profile_path(username)
             
             if not os.path.exists(filepath):
-                logger.info(f"Profile not found: {username}")
+                logger.info(f"Profile not found: {username} (tried: {filepath})")
                 return None
             
+            logger.info(f"Attempting to load: {filepath}")
             with open(filepath, 'r', encoding='utf-8') as f:
                 profile = json.load(f)
             
             logger.info(f"✓ Loaded profile: {username}")
             return profile
             
+        except json.JSONDecodeError as e:
+            logger.error(f"JSON parse error in {filepath}: {e}")
+            return None
         except Exception as e:
-            logger.error(f"Error loading profile {username}: {e}")
+            logger.error(f"Error loading profile {username} from {filepath}: {e}")
             return None
     
     def profile_exists(self, username: str) -> bool:

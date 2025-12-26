@@ -1,6 +1,7 @@
 """
 Comment Generator Service
 Generates human-like LinkedIn comments using Gemini (FREE)
+Enhanced with advanced humanization + paraphrasing
 """
 import google.generativeai as genai
 from typing import Dict, List
@@ -9,6 +10,8 @@ import json
 import re
 import logging
 import random
+from app.services.advanced_humanizer import apply_advanced_humanization
+from app.services.paraphrase_service import paraphrase_service
 
 logger = logging.getLogger(__name__)
 
@@ -20,7 +23,7 @@ class CommentGenerator:
         genai.configure(api_key=settings.GEMINI_API_KEY)
         # Use Flash/Flash-Lite for fast, cheap comment generation
         self.model = genai.GenerativeModel(settings.GEMINI_GENERATION_MODEL)
-        self.humanizer = HumanizationEngine()
+        # Now using advanced_humanizer module with burstiness & natural patterns
     
     def generate_comments(
         self,
@@ -63,8 +66,10 @@ class CommentGenerator:
             response = self.model.generate_content(
                 prompt,
                 generation_config=genai.types.GenerationConfig(
-                    temperature=settings.TEMPERATURE,
+                    temperature=0.7,  # Balanced: natural but grounded
                     max_output_tokens=settings.MAX_TOKENS,
+                    top_p=0.9,  # Reduces hallucination by limiting token choices
+                    top_k=40,   # Further limits wild token selections
                 )
             )
             
@@ -78,16 +83,28 @@ class CommentGenerator:
                 logger.error(f"JSON parse error: {e}")
                 return self._fallback_comments(post_analysis['approaches'])
             
-            # Humanize each comment
+            # STEP 3: Apply advanced humanization + paraphrasing
             humanized_comments = []
             for i, comment in enumerate(comments_data.get("comments", []), 1):
-                humanized_text = self.humanizer.humanize(
+                # Step 3a: Advanced humanization (burstiness, natural patterns)
+                humanized_text = apply_advanced_humanization(
                     comment.get("text", ""),
                     user_style
                 )
                 
+                # Step 3b: Paraphrase for extra variation (if enabled)
+                if paraphrase_service.enabled:
+                    logger.debug(f"Paraphrasing comment {i}/3...")
+                    paraphrased_text = paraphrase_service.paraphrase(
+                        humanized_text,
+                        mode="standard"  # Options: standard, fluent, creative
+                    )
+                    final_text = paraphrased_text if paraphrased_text else humanized_text
+                else:
+                    final_text = humanized_text
+                
                 humanized_comments.append({
-                    "text": humanized_text,
+                    "text": final_text,
                     "variation": i,
                     "confidence": comment.get("confidence", 0.8),
                     "approach": comment.get("approach", post_analysis['approaches'][i-1] if i <= len(post_analysis['approaches']) else "engaging")
@@ -142,7 +159,7 @@ Return ONLY the JSON object, nothing else."""
                 analysis_prompt,
                 generation_config=genai.types.GenerationConfig(
                     temperature=0.2,  # Very low for consistent JSON
-                    max_output_tokens=150,
+                    max_output_tokens=300,  # Increased to prevent truncation
                 )
             )
             
@@ -272,6 +289,31 @@ Return ONLY the JSON object, nothing else."""
         
         return text
     
+    def _extract_key_facts(self, post_content: str) -> List[str]:
+        """
+        Extract specific facts from post to prevent hallucination
+        
+        Returns list of facts the comment should reference
+        """
+        facts = []
+        
+        # Extract numbers (dates, metrics, timeframes)
+        numbers = re.findall(r'\b\d+[KMB]?\b|\b\d{4}\b', post_content)
+        if numbers:
+            facts.extend([f"number: {n}" for n in numbers[:2]])
+        
+        # Extract list items (numbered or bulleted)
+        list_items = re.findall(r'[\d]+[.)\-]\s*([^\n]+)', post_content)
+        if list_items:
+            facts.extend([f"point: {item[:50].strip()}" for item in list_items[:3]])
+        
+        # Extract quoted phrases
+        quotes = re.findall(r'"([^"]+)"', post_content)
+        if quotes:
+            facts.extend([f"quote: {q[:40]}" for q in quotes[:2]])
+        
+        return facts[:5]  # Max 5 facts total
+    
     def _build_dynamic_generation_prompt(
         self,
         user_style: Dict,
@@ -280,11 +322,23 @@ Return ONLY the JSON object, nothing else."""
         post_content: str,
         post_analysis: Dict
     ) -> str:
-        """Build prompt based on post type analysis"""
+        """Build prompt based on post type analysis - Anti-hallucination optimized"""
         
         post_type = post_analysis['type']
         approaches = post_analysis['approaches']
         tone = post_analysis['tone']
+        
+        # NEW: Use extracted facts from profile analyzer if available
+        key_facts = post_context.get('extracted_facts', [])
+        
+        # Fallback: Extract our own facts if analyzer didn't provide them
+        if not key_facts:
+            key_facts = self._extract_key_facts(post_content)
+        
+        # NEW: Use key points from analyzer if available
+        analyzer_key_points = post_context.get('key_points', [])
+        if analyzer_key_points:
+            key_facts.extend([f"key point: {point}" for point in analyzer_key_points[:3]])
         
         # Dynamic examples based on post type
         type_examples = {
@@ -326,43 +380,75 @@ Return ONLY the JSON object, nothing else."""
             "Makes sense. Timing is everything."
         ])
         
+        # Build facts section
+        facts_instruction = ""
+        if key_facts:
+            facts_instruction = f"""
+SPECIFIC FACTS FROM POST (reference at least ONE):
+{chr(10).join(f'- {fact}' for fact in key_facts[:7])}
+"""
+        
+        # NEW: Add user's typical openings if available
+        user_openings = user_style.get('typical_comment_openings', [])
+        openings_hint = ""
+        if user_openings:
+            openings_hint = f"""
+YOUR TYPICAL COMMENT STARTERS (optionally use these naturally):
+{', '.join(f'"{opener}"' for opener in user_openings[:3])}
+"""
+        
         return f"""Write 3 SHORT LinkedIn comments for a {post_type.upper()} post.
 
 POST TYPE: {post_type}
 POST TONE: {tone}
 REQUIRED APPROACHES: {', '.join(approaches)}
 
-POST: {post_content[:400]}
+POST CONTENT:
+{post_content[:400]}
+{facts_instruction}
 
-USER STYLE: {user_style.get('tone')}, {user_style.get('avg_comment_length', 35)} words avg
+USER STYLE: {user_style.get('tone')}, {user_style.get('avg_comment_length', 35)} words avg{openings_hint}
 
-CRITICAL RULES:
+CRITICAL RULES (ANTI-HALLUCINATION):
 1. Keep it SHORT (20-50 words max)
-2. Match the {tone} tone of the post
-3. Use these 3 approaches: {', '.join(approaches)}
-4. NO corporate jargon or AI phrases
-5. Sound like you're texting a smart friend
-6. Add personal touch or real experience
-7. Vary sentence lengths dramatically
+2. Reference SPECIFIC words/numbers from the post above (not generic "your insights")
+3. Match the {tone} tone of the post
+4. Use these 3 approaches: {', '.join(approaches)}
+5. NO corporate jargon or AI phrases
+6. Sound like you're texting a smart friend
+7. Add personal touch ONLY if genuinely relevant
+8. Vary sentence lengths dramatically
+9. NEVER mention topics not in the post
+10. NEVER invent credentials or experiences
+
+SELF-CHECK BEFORE GENERATING:
+For each comment ask:
+- Did I reference something SPECIFIC from the post?
+- Did I add real value (not just praise)?
+- Does this sound like a real text message?
+- Did I stay 100% within what the post discusses?
+
+If ANY answer is NO, rewrite until all are YES.
 
 GOOD EXAMPLES for {post_type}:
 {chr(10).join(f'- "{ex}"' for ex in examples)}
 
-BAD EXAMPLES (Never write like this):
-- "It takes immense courage to share such a raw experience..."
-- "This is a fantastic reflection on a tough experience..."
-- "Your journey from that low point is truly inspiring..."
-- "This highlights the critical importance of..."
+BAD EXAMPLES (NEVER do this):
+- "Your journey from X to Y is inspiring..." [Generic, could apply anywhere]
+- "As someone in enterprise sales..." [Don't invent credentials]
+- "This reminds me of Steve Jobs..." [Don't add external references]
+- "Great insights!" [Too generic, doesn't reference specifics]
+- "This highlights the critical importance of..." [Corporate speak]
 
-BANNED WORDS: "immense", "powerful", "invaluable", "truly", "inspiring", "journey", "pave the way", "wisdom", "transparent", "reflection", "regarding", "highlighted", "critical", "valuable", "insights", "delve", "leverage", "game-changing"
+BANNED WORDS: "immense", "powerful", "invaluable", "truly", "inspiring", "journey", "pave the way", "wisdom", "transparent", "reflection", "regarding", "highlighted", "critical", "valuable insights", "delve", "leverage", "game-changing"
 
-Write like a REAL person commenting on a {post_type} post. Short. Direct. Genuine.
+Write like a REAL person commenting on this SPECIFIC {post_type} post. Short. Direct. Genuine. Grounded in the actual post content.
 
-Return JSON with 3 comments matching the approaches: {', '.join(approaches)}
+Return JSON with 3 comments:
 {{"comments":[
-  {{"text":"comment using {approaches[0]} approach","approach":"{approaches[0]}"}},
-  {{"text":"comment using {approaches[1]} approach","approach":"{approaches[1]}"}},
-  {{"text":"comment using {approaches[2]} approach","approach":"{approaches[2]}"}}
+  {{"text":"comment using {approaches[0]} approach - reference specific post content","approach":"{approaches[0]}"}},
+  {{"text":"comment using {approaches[1]} approach - reference specific post content","approach":"{approaches[1]}"}},
+  {{"text":"comment using {approaches[2]} approach - reference specific post content","approach":"{approaches[2]}"}}
 ]}}"""
     
     def _build_generation_prompt(
