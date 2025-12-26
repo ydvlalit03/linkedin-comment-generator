@@ -29,3 +29,6 @@ cachetools==5.3.2
 # Testing
 pytest==7.4.4
 pytest-asyncio==0.23.3
+
+anthropic==0.39.0
+openai==1.59.5
