@@ -16,9 +16,7 @@ requests==2.31.0
 beautifulsoup4==4.12.3
 
 # AI/ML
-google-generativeai==0.3.2  # Optional: if using Gemini
-openai>=1.0.0  # For OpenAI GPT models
-anthropic>=0.18.0  # For Claude Sonnet 4.5
+google-generativeai==0.3.2
 
 # Utilities
 python-dotenv==1.0.0
