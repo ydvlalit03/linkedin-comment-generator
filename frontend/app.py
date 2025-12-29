@@ -119,7 +119,7 @@ def api_call(method, endpoint, **kwargs):
     """Helper for API calls"""
     try:
         url = f"{API_BASE_URL}/{endpoint}"
-        response = requests.request(method, url, **kwargs, timeout=60)
+        response = requests.request(method, url, **kwargs, timeout=150)
         response.raise_for_status()
         return response.json()
     except requests.exceptions.RequestException as e:

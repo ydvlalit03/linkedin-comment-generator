@@ -105,7 +105,7 @@ app.add_middleware(
 )
 
 # Initialize services (linkedin_service already initialized above)
-profile_analyzer = ProfileAnalyzer()
+# profile_analyzer already initialized above
 # comment_generator initialized above with fallback chain
 
 
@@ -199,6 +199,9 @@ async def debug_database():
         "users": {k: {
             "id": v["id"],
             "name": v.get("name"),
+            "has_complete_profile": "profile_data" in v,
+            "has_professional_data": "professional" in v,
+            "writing_style_keys": len(v.get("writing_style", {})),
             "created_at": v.get("created_at").isoformat() if v.get("created_at") else None
         } for k, v in users_db.items()},
         "targets": {k: {
@@ -274,6 +277,7 @@ async def create_user_profile(request: ProfileRequest):
             )
         
         logger.info(f"✓ Loaded profile: {username}")
+        logger.info(f"✓ Profile has {len(saved_profile)} top-level keys")
         
         # Step 2: Convert from JSON format
         profile_data = linkedin_service._convert_from_json_format(saved_profile)
@@ -300,9 +304,9 @@ async def create_user_profile(request: ProfileRequest):
             comment_objects
         )
         
-        logger.info(f"✅ User analysis complete: {len(writing_style)} fields extracted")
+        logger.info(f"✅ User analysis complete: {len(writing_style)} top-level fields extracted")
         
-        # Step 4: Store in database
+        # Step 4: Store in database with COMPLETE data
         user_id = len(users_db) + 1
         users_db[user_id] = {
             "id": user_id,
@@ -311,24 +315,46 @@ async def create_user_profile(request: ProfileRequest):
             "name": profile_data.get("name"),
             "headline": profile_data.get("headline"),
             "about": profile_data.get("about"),
-            "experience": profile_data.get("experience"),
-            "skills": profile_data.get("skills"),
-            "writing_style": writing_style,
+            
+            # ⭐ COMPLETE PROFILE DATA (82+ fields)
+            "profile_data": saved_profile,  # Full JSON with all sections
+            "writing_style": writing_style,  # Analyzed + merged data
+            
+            # ⭐ PROFESSIONAL DATA (extracted for easy access)
+            "professional": {
+                "expertise_areas": saved_profile.get("professional", {}).get("expertise_areas", []),
+                "experience": saved_profile.get("professional", {}).get("experience", []),
+                "skills": saved_profile.get("professional", {}).get("skills", []),
+                "industry": saved_profile.get("basic_info", {}).get("industry", "")
+            },
+            
+            # ⭐ REAL EXAMPLES (for reference)
+            "real_examples": {
+                "comments": real_comments[:10],  # Keep top 10
+                "common_phrases": saved_profile.get("common_phrases", [])
+            },
+            
             "created_at": datetime.now()
         }
+        
+        logger.info(f"✅ Stored complete profile with {len(users_db[user_id]['profile_data'])} JSON fields")
+        logger.info(f"✅ Writing style has {len(users_db[user_id]['writing_style'])} sections")
+        logger.info(f"✅ Professional data: {len(users_db[user_id]['professional'])} fields")
         
         return ProfileResponse(
             user_id=user_id,
             name=profile_data.get("name", ""),
             headline=profile_data.get("headline", ""),
             writing_style=writing_style,
-            message=f"Profile loaded from user_profiles/{username}.json"
+            message=f"Profile loaded from user_profiles/{username}.json with {len(saved_profile)} fields"
         )
         
     except HTTPException:
         raise
     except Exception as e:
         logger.error(f"Error loading user profile: {str(e)}")
+        import traceback
+        logger.error(traceback.format_exc())
         raise HTTPException(status_code=500, detail=str(e))
 
 
@@ -343,7 +369,9 @@ async def get_user_profile(user_id: int):
         "user_id": user["id"],
         "name": user["name"],
         "headline": user["headline"],
-        "writing_style": user["writing_style"]
+        "writing_style": user["writing_style"],
+        "has_complete_profile": "profile_data" in user,
+        "profile_data_keys": len(user.get("profile_data", {}))
     }
 
 
@@ -456,6 +484,8 @@ async def analyze_target(request: TargetAnalysisRequest):
         raise
     except Exception as e:
         logger.error(f"Error analyzing target: {str(e)}")
+        import traceback
+        logger.error(traceback.format_exc())
         raise HTTPException(status_code=500, detail=str(e))
 
 
@@ -463,13 +493,11 @@ async def analyze_target(request: TargetAnalysisRequest):
 async def generate_comments(request: CommentGenerationRequest):
     """
     Generate 3 comment variations for a specific post
-    This is the core functionality!
+    This is the core functionality with COMPLETE profile integration!
     """
     try:
-        logger.info(f"Generating comments for post {request.post_id}")
+        logger.info(f"🎯 Generating comments for post {request.post_id}")
         logger.info(f"Request: user_id={request.user_id}, post_id={request.post_id}")
-        logger.info(f"Available users: {list(users_db.keys())}")
-        logger.info(f"Available posts: {list(posts_db.keys())}")
         
         # Step 1: Get user data
         if request.user_id not in users_db:
@@ -489,50 +517,93 @@ async def generate_comments(request: CommentGenerationRequest):
             logger.error(f"Target {post['target_id']} not found in database")
             raise HTTPException(status_code=404, detail=f"Target not found. Please analyze target first.")
         
-        logger.info("✓ All data found, proceeding with generation...")
+        logger.info("✓ All data found, building complete user profile...")
         
-        # Step 4: Fetch post comments for context
+        # Step 4: Build COMPLETE user profile for generation
+        # This merges ALL data sources into one comprehensive profile
+        complete_user_profile = {
+            # ⭐ Core writing style (analyzed by ProfileAnalyzer)
+            **user["writing_style"],
+            
+            # ⭐ Professional data (easy access to expertise)
+            "professional": user.get("professional", {
+                "expertise_areas": [],
+                "experience": [],
+                "skills": [],
+                "industry": ""
+            }),
+            
+            # ⭐ Real examples (actual comments for reference)
+            "real_examples": user.get("real_examples", {
+                "comments": [],
+                "common_phrases": []
+            }),
+            
+            # ⭐ Raw profile data (complete JSON with 82+ fields)
+            "raw_profile": user.get("profile_data", {})
+        }
+        
+        # Log what we're passing to the generator
+        logger.info(f"✅ Complete profile assembled:")
+        logger.info(f"   - Writing style keys: {len(user['writing_style'])}")
+        logger.info(f"   - Professional fields: {len(complete_user_profile['professional'])}")
+        logger.info(f"   - Real examples: {len(complete_user_profile['real_examples'].get('comments', []))}")
+        logger.info(f"   - Raw profile sections: {len(complete_user_profile['raw_profile'])}")
+        logger.info(f"   - Total top-level keys: {len(complete_user_profile)}")
+        
+        # Step 5: Fetch post comments for context
         existing_comments = linkedin_service.get_post_comments(
             post["post_url"],
             max_comments=settings.MAX_COMMENTS_ANALYZE
         )
         
-        # Step 5: Analyze post context
+        # Step 6: Analyze post context
+        logger.info("🔍 Analyzing post context...")
         post_context = profile_analyzer.analyze_post_context(
             post,
             existing_comments
         )
+        logger.info(f"✅ Post context analyzed: {len(post_context)} fields")
         
-        # Step 6: Generate comments!
+        # Step 7: Generate comments with COMPLETE data!
+        logger.info("🚀 Generating comments with complete profile data...")
+        logger.info(f"   - User profile: {len(complete_user_profile)} keys")
+        logger.info(f"   - Target insights: {len(target['insights'])} keys")
+        logger.info(f"   - Post context: {len(post_context)} keys")
+        
         generated = comment_generator.generate_comments(
-            user_style=user["writing_style"],
-            target_profile=target["insights"],
-            post_context=post_context,
+            user_style=complete_user_profile,  # ⭐ ALL 82+ fields!
+            target_profile=target["insights"],  # 10+ fields
+            post_context=post_context,  # 12+ fields
             post_content=post["content"]
         )
         
-        # Step 7: Store generated comments
+        logger.info(f"✅ Generated {len(generated)} comment variations")
+        
+        # Step 8: Store generated comments
+        # ✅ FIX: Use 'variation_number' instead of 'variation'
         for comment in generated:
             comment_id = len(comments_db) + 1
             comments_db[comment_id] = {
                 "id": comment_id,
                 "user_id": request.user_id,
                 "post_id": request.post_id,
-                "text": comment["text"],
-                "variation": comment["variation"],
-                "confidence": comment["confidence"],
+                "text": comment.get("text", ""),
+                "variation": comment.get("variation_number", 1),  # ✅ FIXED
+                "confidence": comment.get("confidence", 0.85),
                 "created_at": datetime.now()
             }
         
-        # Step 8: Return results
+        # Step 9: Return results
+        # ✅ FIX: Use 'variation_number' instead of 'variation'
         comment_responses = [
             CommentResponse(
-                text=c["text"],
-                variation=c["variation"],
-                confidence=c["confidence"],
-                approach=c["approach"]
+                text=c.get("text", ""),
+                variation=c.get("variation_number", idx + 1),  # ✅ FIXED
+                confidence=c.get("confidence", 0.85),
+                approach=c.get("approach", "context-aware")
             )
-            for c in generated
+            for idx, c in enumerate(generated)
         ]
         
         return GeneratedCommentsResponse(
@@ -541,7 +612,13 @@ async def generate_comments(request: CommentGenerationRequest):
                 "post_topic": post_context.get("main_topic"),
                 "post_sentiment": post_context.get("sentiment"),
                 "user_tone": user["writing_style"].get("tone"),
-                "generation_timestamp": datetime.now().isoformat()
+                "generation_timestamp": datetime.now().isoformat(),
+                "profile_completeness": {
+                    "writing_style_fields": len(user["writing_style"]),
+                    "professional_fields": len(complete_user_profile["professional"]),
+                    "real_examples": len(complete_user_profile["real_examples"].get("comments", [])),
+                    "total_fields_used": len(complete_user_profile)
+                }
             }
         )
         
@@ -549,6 +626,8 @@ async def generate_comments(request: CommentGenerationRequest):
         raise
     except Exception as e:
         logger.error(f"Error generating comments: {str(e)}")
+        import traceback
+        logger.error(traceback.format_exc())
         raise HTTPException(status_code=500, detail=str(e))
 
 

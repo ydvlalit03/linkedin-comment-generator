@@ -376,7 +376,7 @@ Base analysis on ACTUAL profile content provided above."""
     
     def analyze_post_context(
         self, 
-        post_content: str, 
+        post_content,  # Can be str or dict
         existing_comments: List[str] = None
     ) -> Dict:
         """
@@ -393,13 +393,23 @@ Base analysis on ACTUAL profile content provided above."""
             logger.info("🔍 STAGE 2B: POST ANALYSIS STARTING (Claude Opus 4)...")
             logger.info("=" * 60)
             
-            facts = self._extract_post_facts(post_content)
+            # Handle both dict and string input
+            if isinstance(post_content, dict):
+                post_text = post_content.get('content', '') or post_content.get('text', '') or ''
+            else:
+                post_text = str(post_content) if post_content else ''
+            
+            if not post_text:
+                logger.warning("   Empty post content provided")
+                return self._default_post([])
+            
+            facts = self._extract_post_facts(post_text)
             logger.info(f"   Extracted {len(facts)} facts from post")
             
             prompt = f"""Analyze this LinkedIn post deeply to understand the best way to comment.
 
 POST CONTENT:
-{post_content[:1000]}
+{post_text[:1000]}
 
 EXTRACTED FACTS: {', '.join(facts) if facts else 'No specific facts'}
 
@@ -422,7 +432,7 @@ Return ONLY valid JSON:
   "author_wants": "what they want from audience",
   "engagement_opportunity": "best way to engage",
   "best_response_angles": ["angle1", "angle2", "angle3"],
-  "extracted_facts": {facts},
+  "extracted_facts": {json.dumps(facts)},
   "avoid_generic": ["Congratulations!", "Great post!"]
 }}"""
 
@@ -462,7 +472,7 @@ Return ONLY valid JSON:
             logger.error(f"STAGE 2B ERROR: {e}")
             import traceback
             logger.error(traceback.format_exc())
-            return self._default_post(facts if 'facts' in locals() else [])
+            return self._default_post([])
     
     # ==========================================
     # HELPER METHODS
@@ -504,21 +514,33 @@ Return ONLY valid JSON:
         
         return "\n".join(formatted) if formatted else "No experience data"
     
-    def _extract_post_facts(self, content: str) -> List[str]:
-        """Extract specific facts from post"""
+    def _extract_post_facts(self, content) -> List[str]:
+        """Extract specific facts from post content (handles both str and dict)"""
         facts = []
         
-        # Numbers
-        numbers = re.findall(r'\b\d+[kKmMbB%]?\b', content)
-        facts.extend(numbers[:5])
+        # Handle dict input (from normalized post data)
+        if isinstance(content, dict):
+            text_content = content.get('content', '') or content.get('text', '') or str(content)
+        else:
+            text_content = str(content) if content else ''
         
-        # Quotes (key phrases)
-        quotes = re.findall(r'"([^"]+)"', content)
-        facts.extend(quotes[:3])
+        if not text_content:
+            return facts
         
-        # Bullet points/lists
-        bullets = re.findall(r'[•\-\*]\s*([^\n]+)', content)
-        facts.extend(bullets[:3])
+        try:
+            # Numbers
+            numbers = re.findall(r'\b\d+[kKmMbB%]?\b', text_content)
+            facts.extend(numbers[:5])
+            
+            # Quotes (key phrases)
+            quotes = re.findall(r'"([^"]+)"', text_content)
+            facts.extend(quotes[:3])
+            
+            # Bullet points/lists
+            bullets = re.findall(r'[•\-\*]\s*([^\n]+)', text_content)
+            facts.extend(bullets[:3])
+        except Exception as e:
+            logger.warning(f"Error extracting facts: {e}")
         
         return facts
     

@@ -1,10 +1,11 @@
 """
-Paraphrase Service using Paraphrase Genius API
+Paraphrase Service using Custom Humanizer API
 Adds extra humanization layer by paraphrasing generated comments
 """
 import requests
 import logging
 from typing import Optional
+from requests.auth import HTTPBasicAuth
 from app.core.config import settings
 
 logger = logging.getLogger(__name__)
@@ -12,179 +13,202 @@ logger = logging.getLogger(__name__)
 
 class ParaphraseService:
     """
-    Paraphrases comments using Paraphrase Genius API
+    Paraphrases comments using Custom Humanizer API
     Adds extra layer of humanization and variation
     """
     
     def __init__(self):
-        self.api_url = "https://paraphrase-genius.p.rapidapi.com/dev/paraphrase/"
-        self.api_key = settings.PARAPHRASE_API_KEY
-        self.enabled = bool(self.api_key)
+        self.api_url = "https://primary-production-37efc.up.railway.app/webhook/humanizer"
+        self.username = getattr(settings, 'HUMANIZER_BOT_AUTH_USER', None)
+        self.password = getattr(settings, 'HUMANIZER_BOT_AUTH_PASSWORD', None)
+        self.enabled = bool(self.username and self.password)
         
         if self.enabled:
-            logger.info("✓ Paraphrase service enabled")
+            logger.info("✓ Humanizer API service enabled")
         else:
-            logger.warning("⚠️ Paraphrase service disabled (no API key)")
+            logger.warning("⚠️ Humanizer API service disabled (missing HUMANIZER_BOT_AUTH_USER or HUMANIZER_BOT_AUTH_PASSWORD)")
     
     def paraphrase(self, text: str, mode: str = "standard") -> Optional[str]:
         """
-        Paraphrase text using Paraphrase Genius API
+        Paraphrase/humanize text using Custom Humanizer API
         
         Args:
-            text: Original text to paraphrase
-            mode: Paraphrase mode ('standard', 'fluent', 'creative', 'formal', 'simple', 'multiple')
+            text: Original text to paraphrase/humanize
+            mode: Paraphrase mode (ignored for this API, kept for compatibility)
         
         Returns:
-            Paraphrased text or None if failed
+            Humanized text or original text if failed
         """
         if not self.enabled:
-            logger.debug("Paraphrase disabled, returning original")
+            logger.debug("Humanizer API disabled, returning original")
+            return text
+        
+        if not text or not text.strip():
+            logger.warning("Empty text provided for humanization")
             return text
         
         try:
             headers = {
-                "x-rapidapi-key": self.api_key,
-                "x-rapidapi-host": "paraphrase-genius.p.rapidapi.com",
                 "Content-Type": "application/json"
             }
             
             payload = {
-                "text": text,
-                "result_type": mode  # standard, fluent, creative, formal, simple, multiple
+                "content": text
             }
             
-            logger.debug(f"Paraphrasing: {text[:50]}... (mode: {mode})")
+            logger.debug(f"Humanizing: {text[:50]}...")
+            
+            # Use Basic Auth
+            auth = HTTPBasicAuth(self.username, self.password)
             
             response = requests.post(
                 self.api_url,
                 json=payload,
                 headers=headers,
-                timeout=10
+                auth=auth,
+                timeout=15
             )
             
             if response.status_code == 200:
                 result = response.json()
                 
                 # DEBUG: Log the actual response structure
-                logger.info(f"📥 API Response type: {type(result)}")
-                logger.info(f"📥 API Response: {result}")
+                logger.debug(f"📥 API Response type: {type(result)}")
+                logger.debug(f"📥 API Response: {result}")
                 
-                # API can return different formats:
-                # 1. Direct dict: {"result": "paraphrased text"}
-                # 2. List of dicts: [{"paraphrased_output": "text"}, ...]
-                # 3. Dict with result key containing list
-                
-                paraphrased = text  # Default to original
+                # API returns format: [{"output": "humanized text"}]
+                humanized = text  # Default to original
                 
                 # Handle list response
-                if isinstance(result, list):
-                    if len(result) > 0:
-                        first_item = result[0]
-                        if isinstance(first_item, dict):
-                            # Try common keys
-                            paraphrased = (
-                                first_item.get('paraphrased_output') or 
-                                first_item.get('result') or 
-                                first_item.get('text') or 
-                                text
-                            )
-                        elif isinstance(first_item, str):
-                            paraphrased = first_item
+                if isinstance(result, list) and len(result) > 0:
+                    first_item = result[0]
+                    if isinstance(first_item, dict):
+                        humanized = first_item.get('output', text)
+                    elif isinstance(first_item, str):
+                        humanized = first_item
                 
-                # Handle dict response
+                # Handle dict response (in case API changes)
                 elif isinstance(result, dict):
-                    result_value = result.get('result')
-                    
-                    # Result could be string
-                    if isinstance(result_value, str):
-                        paraphrased = result_value
-                    
-                    # Result could be list
-                    elif isinstance(result_value, list) and len(result_value) > 0:
-                        first_item = result_value[0]
-                        if isinstance(first_item, dict):
-                            paraphrased = (
-                                first_item.get('paraphrased_output') or 
-                                first_item.get('result') or 
-                                first_item.get('text') or 
-                                text
-                            )
-                        elif isinstance(first_item, str):
-                            paraphrased = first_item
-                    
-                    # Try other possible keys
-                    else:
-                        paraphrased = (
-                            result.get('paraphrased_output') or
-                            result.get('paraphrase') or
-                            result.get('output') or
-                            text
-                        )
+                    humanized = result.get('output', result.get('content', text))
                 
-                if paraphrased and paraphrased != text:
-                    logger.info(f"✓ Paraphrased successfully")
+                # Validate humanized output
+                if humanized and humanized.strip() and humanized != text:
+                    logger.info(f"✓ Humanized successfully")
                     logger.debug(f"Original: {text[:60]}...")
-                    logger.debug(f"Paraphrased: {paraphrased[:60]}...")
-                    return paraphrased
+                    logger.debug(f"Humanized: {humanized[:60]}...")
+                    return humanized.strip()
                 else:
-                    logger.warning(f"No paraphrase found in response, returning original")
+                    logger.warning(f"No humanized output found in response, returning original")
                     return text
                 
+            elif response.status_code == 401:
+                logger.error("Humanizer API authentication failed - check HUMANIZER_BOT_AUTH_USER and HUMANIZER_BOT_AUTH_PASSWORD")
+                return text
+                
+            elif response.status_code == 429:
+                logger.warning(f"Humanizer API rate limit exceeded, returning original")
+                return text
+                
             else:
-                logger.warning(f"Paraphrase API error {response.status_code}: {response.text[:100]}")
+                logger.warning(f"Humanizer API error {response.status_code}: {response.text[:200]}")
                 return text  # Return original on error
                 
         except requests.exceptions.Timeout:
-            logger.warning("Paraphrase API timeout, returning original")
+            logger.warning("Humanizer API timeout, returning original")
+            return text
+        except requests.exceptions.ConnectionError:
+            logger.error("Humanizer API connection error, returning original")
             return text
         except Exception as e:
-            logger.error(f"Paraphrase error: {str(e)}")
-            logger.debug(f"Response was: {response.json() if 'response' in locals() else 'No response'}")
+            logger.error(f"Humanizer API error: {str(e)}")
+            if 'response' in locals():
+                try:
+                    logger.debug(f"Response was: {response.text[:200]}")
+                except:
+                    pass
             return text  # Return original on error
     
     def paraphrase_batch(self, texts: list, mode: str = "standard") -> list:
         """
-        Paraphrase multiple texts
+        Humanize multiple texts
         
         Args:
-            texts: List of texts to paraphrase
-            mode: Paraphrase mode
+            texts: List of texts to humanize
+            mode: Paraphrase mode (ignored, kept for compatibility)
         
         Returns:
-            List of paraphrased texts (originals returned if paraphrase fails)
+            List of humanized texts (originals returned if humanization fails)
         """
         results = []
         
         for i, text in enumerate(texts, 1):
-            logger.debug(f"Paraphrasing comment {i}/{len(texts)}")
-            paraphrased = self.paraphrase(text, mode=mode)
-            results.append(paraphrased)
+            logger.debug(f"Humanizing comment {i}/{len(texts)}")
+            humanized = self.paraphrase(text, mode=mode)
+            results.append(humanized)
         
         return results
     
     def paraphrase_with_fallback(self, text: str, modes: list = None) -> str:
         """
-        Try multiple paraphrase modes until one succeeds
+        Try to humanize text (modes parameter ignored but kept for compatibility)
         
         Args:
             text: Original text
-            modes: List of modes to try (default: ['standard', 'fluent'])
+            modes: List of modes (ignored for this API)
         
         Returns:
-            Paraphrased text or original if all fail
+            Humanized text or original if failed
         """
-        if modes is None:
-            modes = ['standard', 'fluent']
+        result = self.paraphrase(text)
         
-        for mode in modes:
-            result = self.paraphrase(text, mode=mode)
-            if result and result != text:
-                logger.debug(f"✓ Paraphrase succeeded with mode: {mode}")
-                return result
+        if result and result.strip() and result != text:
+            logger.debug(f"✓ Humanization succeeded")
+            return result
         
-        logger.warning("All paraphrase modes failed, returning original")
+        logger.warning("Humanization failed, returning original")
         return text
+    
+    def test_connection(self) -> bool:
+        """
+        Test connection to humanizer API
+        
+        Returns:
+            True if API is accessible and auth is valid
+        """
+        if not self.enabled:
+            logger.warning("Humanizer API not enabled")
+            return False
+        
+        try:
+            # Test with simple text
+            test_text = "This is a test message."
+            result = self.paraphrase(test_text)
+            
+            if result and result != test_text:
+                logger.info("✓ Humanizer API connection test successful")
+                return True
+            else:
+                logger.warning("Humanizer API connection test returned original text")
+                return False
+                
+        except Exception as e:
+            logger.error(f"Humanizer API connection test failed: {e}")
+            return False
 
 
 # Global instance
 paraphrase_service = ParaphraseService()
+
+
+# Backwards compatibility alias
+def humanize_text(text: str) -> str:
+    """
+    Convenience function for humanizing text
+    
+    Args:
+        text: Text to humanize
+    
+    Returns:
+        Humanized text
+    """
+    return paraphrase_service.paraphrase(text)
