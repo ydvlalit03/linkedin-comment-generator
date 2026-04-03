@@ -1,0 +1,552 @@
+\documentclass[12pt,a4paper]{article}
+\usepackage[margin=1in]{geometry}
+\usepackage{graphicx}
+\usepackage{hyperref}
+\usepackage{xcolor}
+\usepackage{booktabs}
+\usepackage{tabularx}
+\usepackage{enumitem}
+\usepackage{fancyhdr}
+\usepackage{titlesec}
+\usepackage{tcolorbox}
+\usepackage{listings}
+\usepackage{fontawesome5}
+\usepackage{amsmath}
+
+\definecolor{primary}{HTML}{0A66C2}
+\definecolor{accent}{HTML}{057642}
+\definecolor{warning}{HTML}{B24020}
+\definecolor{codebg}{HTML}{1E1E1E}
+\definecolor{codetext}{HTML}{D4D4D4}
+\definecolor{darktext}{HTML}{1D2226}
+
+\hypersetup{colorlinks=true,linkcolor=primary,urlcolor=primary}
+\pagestyle{fancy}
+\fancyhf{}
+\fancyhead[L]{\textcolor{primary}{\textbf{LinkedIn Comment Generator}}}
+\fancyhead[R]{\textcolor{gray}{Technical Document v2.0}}
+\fancyfoot[C]{\thepage}
+
+\titleformat{\section}{\Large\bfseries\color{primary}}{}{0em}{}
+\titleformat{\subsection}{\large\bfseries\color{darktext}}{}{0em}{}
+\titleformat{\subsubsection}{\normalsize\bfseries\color{darktext}}{}{0em}{}
+
+\lstset{
+    backgroundcolor=\color{codebg},
+    basicstyle=\ttfamily\small\color{codetext},
+    breaklines=true,
+    frame=single,
+    rulecolor=\color{gray},
+    tabsize=2,
+    showstringspaces=false,
+}
+
+\newtcolorbox{archbox}[1]{colback=blue!3,colframe=primary,title=#1,fonttitle=\bfseries}
+
+\begin{document}
+
+% ============================================
+% TITLE PAGE
+% ============================================
+\begin{titlepage}
+\centering
+\vspace*{2cm}
+{\Huge\bfseries\color{primary} LinkedIn Comment Generator\par}
+\vspace{0.5cm}
+{\Large\color{darktext} Technical Architecture Document\par}
+\vspace{1cm}
+{\large Version 2.0 --- FastAPI + LangGraph\par}
+\vspace{0.5cm}
+{\large April 2026\par}
+\vspace{2cm}
+
+\begin{tcolorbox}[colback=blue!3,colframe=primary,width=0.85\textwidth]
+\small
+\begin{tabular}{ll}
+\textbf{Frontend:} & Next.js 16 (App Router) + Tailwind CSS + TypeScript \\
+\textbf{Backend:} & FastAPI + LangGraph (Python 3.12) \\
+\textbf{AI Engine:} & Groq API (Llama 3.3 70B + Llama 4 Scout Vision) \\
+\textbf{Search:} & SerpAPI (Google Search) \\
+\textbf{Data:} & RapidAPI LinkedIn Scraper \\
+\textbf{Database:} & SQLite \\
+\textbf{RAG:} & 1,719 reference comments \\
+\textbf{Hosting:} & Railway (single container) \\
+\textbf{Repository:} & \texttt{github.com/lucasleadfreak-halfengi/linkedin-comment-generator} \\
+\end{tabular}
+\end{tcolorbox}
+
+\vfill
+\end{titlepage}
+
+\tableofcontents
+\newpage
+
+% ============================================
+% SYSTEM ARCHITECTURE
+% ============================================
+\section{System Architecture}
+
+\subsection{High-Level Overview}
+
+\begin{archbox}{Architecture Diagram}
+\begin{verbatim}
+Browser (Railway URL)
+    │
+    ▼
+┌─────────────────────────────────────────────────┐
+│           Single Railway Container               │
+│                                                  │
+│  Next.js Frontend (port 3000)                   │
+│  ├── Upload Page        ──proxy──┐              │
+│  ├── Dashboard (Feed)            │              │
+│  ├── Post Detail                 │  /api/*      │
+│  └── Settings                    ▼              │
+│                          FastAPI Backend (8000)  │
+│                          ├── LangGraph Pipeline  │
+│                          ├── SQLite Database     │
+│                          └── RAG (1719 examples) │
+└─────────────────────────────────────────────────┘
+         │              │              │
+    ┌────┘        ┌─────┘        ┌─────┘
+    ▼             ▼              ▼
+ RapidAPI     Groq API       SerpAPI
+ (Scrape)    (AI Engine)    (Search)
+\end{verbatim}
+\end{archbox}
+
+\subsection{Why This Architecture}
+
+\begin{center}
+\begin{tabularx}{\textwidth}{lX}
+\toprule
+\textbf{Decision} & \textbf{Rationale} \\
+\midrule
+LangGraph over linear pipeline & Retry on low quality, parallel generation, conditional flow \\
+FastAPI over Next.js API routes & Python ecosystem, reuse existing code, better AI tooling \\
+Next.js proxy to FastAPI & Single deployment, no CORS issues, clean separation \\
+SQLite over PostgreSQL & Zero config, single file, sufficient for this scale \\
+Groq over OpenAI/Anthropic & 460 tok/s speed, \$0.59/M tokens (10x cheaper than GPT-4) \\
+RAG over fine-tuning & Instant updates, no training cost, \$0 compute \\
+\bottomrule
+\end{tabularx}
+\end{center}
+
+% ============================================
+% LANGGRAPH PIPELINE
+% ============================================
+\section{LangGraph Pipeline}
+
+\subsection{Pipeline Graph}
+
+\begin{archbox}{LangGraph Node Flow}
+\begin{verbatim}
+START
+  │
+  ▼
+[analyze] ──── Groq llama-3.3-70b (JSON mode)
+  │             Detects: post_type, post_tone, sentiment,
+  │             specific_details, best_response_angles
+  ▼
+[search] ───── SerpAPI (conditional)
+  │             Only for: advice, controversial, philosophical
+  │             Skips: celebration, hiring, milestone
+  ▼
+[rag] ──────── SQLite query → top 5 examples
+  │             Filters by post_type, sorts by engagement_score
+  │             Extracts angle names from examples
+  ▼
+[generate] ─── 3x Groq calls IN PARALLEL
+  │             Each with different angle + temperature
+  │             Variation 1: temp=0.70
+  │             Variation 2: temp=0.85
+  │             Variation 3: temp=1.00
+  ▼
+[humanize_validate] ── String processing + quality scoring
+  │
+  ▼
+quality < 50? ──YES──▶ [generate] (retry, max 2x)
+  │
+  NO
+  ▼
+END ── 3 comments saved to DB
+\end{verbatim}
+\end{archbox}
+
+\subsection{State Schema}
+
+\begin{lstlisting}
+class PipelineState(TypedDict):
+    post_id: int
+    post_text: str
+    post_author: dict           # {name, headline}
+    media: list[dict]
+    analysis: dict              # PostAnalysis
+    web_context: str            # Formatted search results
+    rag_context: str            # Formatted RAG examples
+    rag_angles: list[str]       # Angle names from RAG
+    profile: dict               # CommenterProfile
+    comments: Annotated[list[dict], operator.add]  # APPENDS
+    retry_count: int
+    errors: Annotated[list[str], operator.add]
+\end{lstlisting}
+
+Key: \texttt{comments} uses \texttt{operator.add} --- each node \textbf{appends} to the list rather than replacing it, enabling retry accumulation.
+
+\subsection{Node Details}
+
+\subsubsection{Analyze Node}
+\begin{itemize}[leftmargin=1.5em]
+    \item \textbf{Model:} \texttt{llama-3.3-70b-versatile}
+    \item \textbf{Mode:} JSON response format
+    \item \textbf{Temperature:} 0.3 (deterministic)
+    \item \textbf{Detects:} post\_type (9 types), post\_tone (7 tones), sentiment, emotional\_tone, specific\_details, key\_insights, best\_response\_angles
+    \item \textbf{Author context:} Injects post author name + headline into prompt
+\end{itemize}
+
+\subsubsection{Search Node (Conditional)}
+\begin{itemize}[leftmargin=1.5em]
+    \item \textbf{API:} SerpAPI Google Search
+    \item \textbf{Triggered for:} advice\_tactical, hot\_take\_controversial, philosophical\_abstract, reflective\_lessons
+    \item \textbf{Skipped for:} celebration\_win, milestone\_announcement, hiring\_team, self\_promo\_pitch
+    \item \textbf{Query builder:} Uses topic + specific\_details + post\_type for focused queries
+\end{itemize}
+
+\subsubsection{RAG Node}
+\begin{itemize}[leftmargin=1.5em]
+    \item \textbf{Database:} 1,719 reference comments in SQLite
+    \item \textbf{Query:} Filter by \texttt{post\_type}, sort by \texttt{engagement\_score DESC}, limit 5
+    \item \textbf{Fallback:} Keyword search in \texttt{post\_content} if type match $<$ 3 results
+    \item \textbf{Output:} Formatted examples + extracted angle names
+\end{itemize}
+
+\subsubsection{Generate Node (Parallel)}
+\begin{itemize}[leftmargin=1.5em]
+    \item \textbf{Model:} \texttt{llama-3.3-70b-versatile}
+    \item \textbf{3 calls via \texttt{asyncio.gather()}} --- truly parallel
+    \item \textbf{Angle selection priority:} RAG angles $\rightarrow$ AI-suggested valid angles $\rightarrow$ post type defaults
+    \item \textbf{Only valid angles used:} 21 defined angles, rejects LLM-invented ones
+    \item \textbf{Temperature escalation:} 0.70, 0.85, 1.00 for diversity
+\end{itemize}
+
+\subsubsection{Humanize + Validate Node}
+\textbf{Humanization pipeline} (6 steps):
+\begin{enumerate}[leftmargin=1.5em]
+    \item Remove AI formality (``Furthermore'' $\rightarrow$ ``plus'', ``leverage'' $\rightarrow$ ``use'')
+    \item Apply contractions (``do not'' $\rightarrow$ ``don't'', 35+ patterns)
+    \item Add natural imperfections (drop trailing period, ellipsis, lowercase start)
+    \item Trim to target length
+\end{enumerate}
+
+\textbf{Validation scoring:}
+\begin{align*}
+    \text{quality} &= 100 - \text{length\_penalty} - \text{ai\_phrase\_penalty} - \text{exclamation\_penalty}
+\end{align*}
+
+\textbf{Confidence formula:}
+\begin{align*}
+    \text{confidence} &= \underbrace{\frac{\text{quality}}{100} \times 0.40}_{\text{quality (40\%)}} + \underbrace{\text{angle\_bonus}}_{\text{30\%}} + \underbrace{0.15}_{\text{humanized}} + \underbrace{\text{word\_accuracy}}_{\text{10\%}} + \underbrace{\text{no\_issues}}_{\text{5\%}}
+\end{align*}
+
+Where angle\_bonus = 0.30 (RAG), 0.20 (good angle), or 0.10 (default).
+
+\subsubsection{Retry Logic}
+\begin{itemize}[leftmargin=1.5em]
+    \item Triggered when any comment has quality $<$ 50
+    \item Re-runs \texttt{generate} node with same state
+    \item Maximum 2 retries
+    \item After retries, top 3 comments by confidence are selected
+\end{itemize}
+
+% ============================================
+% PROJECT STRUCTURE
+% ============================================
+\section{Project Structure}
+
+\begin{lstlisting}
+linkedin-comment-generator/
+├── src/                        # Next.js Frontend
+│   ├── app/
+│   │   ├── page.tsx            # CSV upload page
+│   │   ├── dashboard/page.tsx  # LinkedIn feed view
+│   │   ├── post/[postId]/      # Post detail + comments
+│   │   └── settings/page.tsx   # Commenter profile
+│   ├── components/
+│   │   ├── upload/             # CSV uploader, URL preview
+│   │   ├── post/               # Post card (LinkedIn style)
+│   │   └── comments/           # Comment card, actions
+│   └── lib/                    # Shared types, data constants
+│
+├── backend/                    # FastAPI + LangGraph
+│   ├── main.py                 # FastAPI app + CORS
+│   ├── app/
+│   │   ├── graph/
+│   │   │   ├── state.py        # PipelineState TypedDict
+│   │   │   ├── nodes.py        # 5 graph nodes
+│   │   │   └── pipeline.py     # Graph compilation
+│   │   ├── services/
+│   │   │   ├── linkedin_scraper.py
+│   │   │   ├── web_search.py
+│   │   │   ├── rag_service.py
+│   │   │   ├── prompt_engine.py
+│   │   │   └── humanizer.py
+│   │   ├── models/schemas.py   # Pydantic models
+│   │   ├── routes/
+│   │   │   ├── scrape.py       # /api/upload-csv, /api/scrape-profiles
+│   │   │   ├── generate.py     # /api/generate-comments
+│   │   │   └── posts.py        # /api/posts, /api/profile, /api/feedback
+│   │   └── db/database.py      # SQLite connection + init
+│   └── requirements.txt
+│
+├── data/                       # SQLite database
+├── Dockerfile                  # Combined frontend + backend
+├── start.sh                    # Starts both servers
+├── next.config.ts              # Proxy /api/* -> FastAPI
+└── docker-compose.yml
+\end{lstlisting}
+
+% ============================================
+% DATABASE
+% ============================================
+\section{Database Schema}
+
+\subsection{Tables}
+
+\begin{center}
+\small
+\begin{tabularx}{\textwidth}{llX}
+\toprule
+\textbf{Table} & \textbf{Rows (typical)} & \textbf{Purpose} \\
+\midrule
+\texttt{scraped\_posts} & 10--1000 & Scraped LinkedIn posts with analysis \\
+\texttt{generated\_comments} & 30--3000 & AI-generated comments (3 per post) \\
+\texttt{comment\_feedback} & varies & User ratings for learning loop \\
+\texttt{reference\_comments} & 1,719 & RAG dataset (high-engagement examples) \\
+\texttt{commenter\_profiles} & 1--5 & Commenter voice profiles \\
+\bottomrule
+\end{tabularx}
+\end{center}
+
+\subsection{Key Fields: scraped\_posts}
+\begin{lstlisting}
+id, profile_url, author_name, author_headline,
+author_profile_pic, post_text, post_url, post_urn,
+likes_count, comments_count, shares_count,
+media_type, media_urls (JSON), posted_at,
+post_analysis (JSON), web_search_context (JSON),
+status (scraped|analyzed|generated), batch_id
+\end{lstlisting}
+
+% ============================================
+% API REFERENCE
+% ============================================
+\section{API Reference}
+
+All endpoints are served by FastAPI on port 8000. Next.js proxies \texttt{/api/*} to FastAPI.
+
+\begin{center}
+\small
+\begin{tabularx}{\textwidth}{llX}
+\toprule
+\textbf{Method} & \textbf{Endpoint} & \textbf{Description} \\
+\midrule
+POST & \texttt{/api/upload-csv} & Parse CSV, extract LinkedIn URLs \\
+POST & \texttt{/api/scrape-profiles} & Scrape posts (with cache + dedup) \\
+POST & \texttt{/api/generate-comments} & Full LangGraph pipeline \\
+GET & \texttt{/api/posts} & List all scraped posts \\
+GET & \texttt{/api/post/\{id\}} & Post detail + generated comments \\
+GET & \texttt{/api/profile} & Get active commenter profile \\
+POST & \texttt{/api/profile} & Save commenter profile \\
+POST & \texttt{/api/feedback} & Rate a generated comment \\
+POST & \texttt{/api/import-rag} & Import RAG CSV data \\
+GET & \texttt{/api/rag-status} & Check RAG data count \\
+GET & \texttt{/api/health} & Health check \\
+\bottomrule
+\end{tabularx}
+\end{center}
+
+% ============================================
+% PROMPT ENGINEERING
+% ============================================
+\section{Prompt Engineering}
+
+\subsection{Generation Prompt Structure}
+
+The prompt sent to Groq for comment generation follows this structure:
+
+\begin{lstlisting}
+1. POST TO COMMENT ON (full text, 1500 chars max)
+   + Author context (name, headline)
+   + Post type, topic, key details
+
+2. WHO YOU ARE (commenter identity)
+   + Name, headline, expertise
+   + Real comment examples (voice reference)
+   + Signature phrases
+
+3. COMMENT STRATEGY
+   + Angle instruction (what to say)
+   + Variation instruction (how to structure)
+
+4. TONE MATCHING
+   + Post tone detected -> matching instruction
+
+5. RULES
+   + Word count target
+   + BANNED words/phrases (40+ AI tells)
+
+6. RAG EXAMPLES (if available)
+   + 5 high-engagement reference comments
+
+7. WEB CONTEXT (if searched)
+   + 3 search result snippets
+\end{lstlisting}
+
+\subsection{Anti-AI Detection}
+
+The system actively avoids AI-detectable patterns:
+
+\begin{itemize}[leftmargin=1.5em]
+    \item \textbf{40+ banned words:} leverage, navigate, unlock, delve, foster, robust, seamless, holistic, innovative, transformative...
+    \item \textbf{Banned phrases:} ``it's worth noting'', ``in today's'', ``couldn't agree more'', ``this resonates deeply''...
+    \item \textbf{Structural:} No intro$\rightarrow$balanced$\rightarrow$summary$\rightarrow$conclusion pattern
+    \item \textbf{Humanizer:} Contractions, imperfections, casual connectors
+    \item \textbf{Tone matching:} Casual post $\rightarrow$ casual comment (no over-formality)
+\end{itemize}
+
+% ============================================
+% COSTING
+% ============================================
+\section{Detailed Costing Analysis}
+
+\subsection{API Pricing (as of April 2026)}
+
+\begin{center}
+\begin{tabularx}{\textwidth}{Xrr}
+\toprule
+\textbf{Service} & \textbf{Pricing} & \textbf{Free Tier} \\
+\midrule
+Groq llama-3.3-70b (input) & \$0.59 / M tokens & --- \\
+Groq llama-3.3-70b (output) & \$0.79 / M tokens & --- \\
+Groq llama-4-scout (input) & \$0.11 / M tokens & --- \\
+Groq llama-4-scout (output) & \$0.34 / M tokens & --- \\
+RapidAPI LinkedIn Scraper & \$0.025 / call & 10 calls/day \\
+SerpAPI Google Search & \$0.015 / search & 100/month \\
+Railway Hosting (Hobby) & \$5 / month & --- \\
+\bottomrule
+\end{tabularx}
+\end{center}
+
+\subsection{Per-Post Cost Breakdown}
+
+For each post processed, the pipeline makes:
+
+\begin{center}
+\begin{tabularx}{\textwidth}{Xlrrr}
+\toprule
+\textbf{Step} & \textbf{Service} & \textbf{Calls} & \textbf{Tokens} & \textbf{Cost} \\
+\midrule
+Scrape post & RapidAPI & 1 & --- & \$0.0250 \\
+Analyze post & Groq 3.3-70b & 1 & $\sim$1,400 & \$0.0014 \\
+Image analysis & Groq 4-scout & 0.5 & $\sim$2,300 & \$0.0002 \\
+Web search & SerpAPI & 0.5 & --- & \$0.0075 \\
+Generate ×3 & Groq 3.3-70b & 3 & $\sim$5,400 & \$0.0042 \\
+\midrule
+\textbf{Total} & & \textbf{6} & & \textbf{\$0.038} \\
+\bottomrule
+\end{tabularx}
+\end{center}
+
+\subsection{Monthly Cost Projections}
+
+\begin{center}
+\renewcommand{\arraystretch}{1.3}
+\begin{tabular}{|r|r|r|r|r|r|}
+\hline
+\textbf{Posts/Mo} & \textbf{Groq} & \textbf{RapidAPI} & \textbf{SerpAPI} & \textbf{Railway} & \textbf{Total} \\
+\hline
+100 & \$0.58 & Free tier & Free tier & \$5 & \textbf{\$5.58} \\
+\hline
+500 & \$2.90 & \$25 (Pro) & \$25 & \$5 & \textbf{\$57.90} \\
+\hline
+1,000 & \$5.80 & \$25 (Pro) & \$75 & \$5 & \textbf{\$110.80} \\
+\hline
+5,000 & \$29.00 & \$75 (Ultra) & \$150 & \$20 & \textbf{\$274.00} \\
+\hline
+10,000 & \$58.00 & \$150 (Mega) & \$275 & \$20 & \textbf{\$503.00} \\
+\hline
+\end{tabular}
+\end{center}
+
+\begin{archbox}{Cost Insight}
+\textbf{Groq is negligible} --- even 10,000 posts/month costs only \$58 in AI inference. The dominant costs are \textbf{RapidAPI} (LinkedIn scraping) and \textbf{SerpAPI} (web search). Optimize by caching aggressively and skipping search for non-tactical posts.
+\end{archbox}
+
+\subsection{Cost Per Comment}
+
+\begin{align*}
+    \text{Cost per comment} &= \frac{\$0.038}{3} = \$0.013 \\
+    \text{At 500 posts/month} &: \frac{\$57.90}{1500 \text{ comments}} = \$0.039 \text{ per comment (incl. subscriptions)}
+\end{align*}
+
+% ============================================
+% DEPLOYMENT
+% ============================================
+\section{Deployment}
+
+\subsection{Railway (Production)}
+
+Single container runs both FastAPI and Next.js:
+
+\begin{lstlisting}
+# Dockerfile builds Next.js + installs Python deps
+# start.sh launches both:
+uvicorn main:app --port 8000 &    # Backend
+node server.js                     # Frontend on $PORT
+\end{lstlisting}
+
+\textbf{Deploy:}
+\begin{lstlisting}
+railway up --detach --service linkedin-comment-gen
+\end{lstlisting}
+
+\textbf{Post-deploy:} Import RAG data (ephemeral storage resets on deploy):
+\begin{lstlisting}
+curl -X POST https://YOUR_URL/api/import-rag \
+  -F "file=@rag_data.csv"
+\end{lstlisting}
+
+\subsection{Environment Variables}
+
+\begin{center}
+\begin{tabularx}{\textwidth}{lXl}
+\toprule
+\textbf{Variable} & \textbf{Description} & \textbf{Required} \\
+\midrule
+\texttt{GROQ\_API\_KEY} & Groq API key & Yes \\
+\texttt{RAPIDAPI\_KEY} & RapidAPI key & Yes \\
+\texttt{RAPIDAPI\_HOST} & RapidAPI host & Yes \\
+\texttt{SERPAPI\_KEY} & SerpAPI key & Optional \\
+\texttt{BACKEND\_URL} & FastAPI URL (default localhost:8000) & No \\
+\texttt{PORT} & Frontend port (Railway sets this) & No \\
+\bottomrule
+\end{tabularx}
+\end{center}
+
+% ============================================
+% FUTURE ENHANCEMENTS
+% ============================================
+\section{Future Enhancements}
+
+\begin{enumerate}[leftmargin=1.5em]
+    \item \textbf{Persistent storage} --- Railway Volume or external PostgreSQL for RAG data persistence
+    \item \textbf{LangSmith integration} --- Visual traces of every pipeline run
+    \item \textbf{Auto-post comments} --- Selenium/browser extension to post directly
+    \item \textbf{Existing comments analysis} --- Scrape top comments to avoid repetition
+    \item \textbf{Multi-user support} --- Multiple commenter profiles, team access
+    \item \textbf{Scheduling} --- Auto-generate comments at optimal posting times
+    \item \textbf{Fine-tuning} --- Once 50K+ comments collected, fine-tune model for brand voice
+    \item \textbf{Video analysis} --- Full video transcription (currently only thumbnails)
+    \item \textbf{Chrome extension} --- Generate comments directly on LinkedIn
+\end{enumerate}
+
+\end{document}

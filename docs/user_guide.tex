@@ -1,0 +1,368 @@
+\documentclass[12pt,a4paper]{article}
+\usepackage[margin=1in]{geometry}
+\usepackage{graphicx}
+\usepackage{hyperref}
+\usepackage{xcolor}
+\usepackage{booktabs}
+\usepackage{tabularx}
+\usepackage{enumitem}
+\usepackage{fancyhdr}
+\usepackage{titlesec}
+\usepackage{tcolorbox}
+\usepackage{fontawesome5}
+
+\definecolor{primary}{HTML}{0A66C2}
+\definecolor{accent}{HTML}{057642}
+\definecolor{warning}{HTML}{B24020}
+\definecolor{bglight}{HTML}{F4F2EE}
+\definecolor{darktext}{HTML}{1D2226}
+
+\hypersetup{colorlinks=true,linkcolor=primary,urlcolor=primary}
+\pagestyle{fancy}
+\fancyhf{}
+\fancyhead[L]{\textcolor{primary}{\textbf{LinkedIn Comment Generator}}}
+\fancyhead[R]{\textcolor{gray}{User Guide v2.0}}
+\fancyfoot[C]{\thepage}
+
+\titleformat{\section}{\Large\bfseries\color{primary}}{}{0em}{}
+\titleformat{\subsection}{\large\bfseries\color{darktext}}{}{0em}{}
+
+\newtcolorbox{infobox}{colback=blue!5,colframe=primary,title=\faInfoCircle\ Note,fonttitle=\bfseries}
+\newtcolorbox{warnbox}{colback=red!5,colframe=warning,title=\faExclamationTriangle\ Important,fonttitle=\bfseries}
+\newtcolorbox{tipbox}{colback=green!5,colframe=accent,title=\faLightbulb\ Tip,fonttitle=\bfseries}
+
+\begin{document}
+
+% ============================================
+% TITLE PAGE
+% ============================================
+\begin{titlepage}
+\centering
+\vspace*{2cm}
+{\Huge\bfseries\color{primary} LinkedIn Comment Generator\par}
+\vspace{0.5cm}
+{\Large\color{darktext} User Guide \& Operations Manual\par}
+\vspace{1cm}
+{\large Version 2.0 --- FastAPI + LangGraph Edition\par}
+\vspace{0.5cm}
+{\large April 2026\par}
+\vspace{2cm}
+
+\begin{tcolorbox}[colback=bglight,colframe=primary,width=0.8\textwidth]
+\centering
+\textbf{AI-powered tool that generates human-like LinkedIn comments}\\[6pt]
+CSV Upload $\rightarrow$ Scrape Posts $\rightarrow$ AI Analysis $\rightarrow$ Generate 3 Comments\\[6pt]
+\textit{Context-aware $\cdot$ Tone-matched $\cdot$ 44 Comment Angles $\cdot$ RAG-enhanced}
+\end{tcolorbox}
+
+\vfill
+{\small Built with: Next.js $\cdot$ FastAPI $\cdot$ LangGraph $\cdot$ Groq AI $\cdot$ RapidAPI $\cdot$ SerpAPI\par}
+\end{titlepage}
+
+\tableofcontents
+\newpage
+
+% ============================================
+% GETTING STARTED
+% ============================================
+\section{Getting Started}
+
+\subsection{What This Tool Does}
+The LinkedIn Comment Generator takes a CSV file containing LinkedIn post URLs, scrapes each post's content, analyzes it with AI, and generates 3 human-like comments per post. Each comment uses a different ``angle'' (e.g., sharing experience, asking questions, offering insights) and is tuned to match the post's tone.
+
+\subsection{Access the App}
+
+\begin{itemize}[leftmargin=1.5em]
+    \item \textbf{Production:} \url{https://linkedin-comment-gen-production.up.railway.app}
+    \item \textbf{Local Development:}
+    \begin{itemize}
+        \item Frontend: \texttt{http://localhost:3001}
+        \item Backend API: \texttt{http://localhost:8000}
+    \end{itemize}
+\end{itemize}
+
+\subsection{Prerequisites}
+\begin{itemize}[leftmargin=1.5em]
+    \item A CSV file with LinkedIn post URLs (one per row)
+    \item API keys configured (Groq, RapidAPI, SerpAPI)
+    \item Commenter profile set up in Settings (for best results)
+\end{itemize}
+
+% ============================================
+% WORKFLOW
+% ============================================
+\section{Step-by-Step Workflow}
+
+\subsection{Step 1: Upload CSV}
+\begin{enumerate}[leftmargin=1.5em]
+    \item Go to the home page (\texttt{/})
+    \item Drag \& drop your CSV file or click ``Browse Files''
+    \item Supported formats:
+    \begin{itemize}
+        \item Full LinkedIn post URLs: \texttt{https://linkedin.com/posts/username\_slug...}
+        \item Profile URLs: \texttt{https://linkedin.com/in/username}
+        \item Bare usernames (single-column CSV): \texttt{justinwelsh}
+    \end{itemize}
+    \item Click ``Upload \& Extract URLs''
+    \item Preview shows detected profiles with POST/PROFILE badges
+\end{enumerate}
+
+\begin{tipbox}
+Post URLs are preferred over profile URLs. With a post URL, the tool fetches that exact post. With a profile URL, it fetches the latest post (which may not be what you want).
+\end{tipbox}
+
+\subsection{Step 2: Scrape Posts}
+\begin{enumerate}[leftmargin=1.5em]
+    \item Select/deselect profiles using checkboxes
+    \item Click ``Scrape Posts''
+    \item Tool fetches post data via RapidAPI: author, text, media, likes, comments, shares
+    \item \textbf{Cache:} Already-scraped posts are skipped (no duplicate API calls)
+    \item Redirects to Dashboard when done
+\end{enumerate}
+
+\begin{infobox}
+Rate limiting: 1.5 seconds between API calls to respect RapidAPI limits. 10 posts take ~15 seconds.
+\end{infobox}
+
+\subsection{Step 3: Dashboard (LinkedIn Feed)}
+\begin{enumerate}[leftmargin=1.5em]
+    \item Dashboard shows posts in a LinkedIn-style feed layout
+    \item Each post card shows: author photo, name, headline, post text, media, reactions
+    \item Filter by status: All / Scraped / Analyzed / Generated
+    \item Click ``Generate AI Comments'' on any post
+\end{enumerate}
+
+\subsection{Step 4: Generate Comments}
+When you click ``Generate AI Comments'', the LangGraph pipeline runs:
+
+\begin{enumerate}[leftmargin=1.5em]
+    \item \textbf{Analyze} --- Groq AI detects post type, tone, topic, key details
+    \item \textbf{Web Search} --- SerpAPI fetches related articles (if post is tactical/controversial)
+    \item \textbf{RAG Retrieval} --- Finds 5 high-engagement reference comments from database
+    \item \textbf{Generate} --- 3 comments generated \textbf{in parallel} with different angles
+    \item \textbf{Humanize + Validate} --- Removes AI phrases, adds natural imperfections, checks quality
+    \item \textbf{Retry} --- If quality $<$ 50, regenerates with different angle (max 2 retries)
+\end{enumerate}
+
+\subsection{Step 5: View \& Copy Comments}
+\begin{enumerate}[leftmargin=1.5em]
+    \item Click ``View Generated Comments'' or navigate to \texttt{/post/\{id\}}
+    \item See 3 generated comments, each with:
+    \begin{itemize}
+        \item Angle badge (e.g., \textit{whispered truth}, \textit{hidden cost})
+        \item Confidence score (\%)
+        \item Word count
+        \item Quality bar
+    \end{itemize}
+    \item Click \textbf{Copy} to copy to clipboard
+    \item Use \textbf{thumbs up/down} to rate (improves future generation via feedback loop)
+    \item Click \textbf{Regenerate All} for fresh comments
+\end{enumerate}
+
+% ============================================
+% SETTINGS
+% ============================================
+\section{Settings --- Commenter Profile}
+
+Navigate to \texttt{/settings} to configure your commenter profile. This is \textbf{critical for quality} --- without it, comments sound generic.
+
+\begin{center}
+\begin{tabularx}{\textwidth}{lX}
+\toprule
+\textbf{Field} & \textbf{Description} \\
+\midrule
+Name & Your full name (appears in prompt as ``who you are'') \\
+Username & LinkedIn username \\
+Headline & Your LinkedIn headline (e.g., ``SDE @ Company'') \\
+Expertise & Comma-separated skills (e.g., ``AI/ML, product management'') \\
+Tone & Writing style: Professional, Casual, Witty, Analytical, Empathetic \\
+Avg Comment Length & Target word count (15--100) \\
+Common Phrases & Phrases you naturally use, one per line \\
+Real Comment Examples & Your actual LinkedIn comments, one per line \\
+\bottomrule
+\end{tabularx}
+\end{center}
+
+\begin{warnbox}
+Without real comment examples, the AI has no voice reference. Add at least 5 of your actual LinkedIn comments for best results.
+\end{warnbox}
+
+% ============================================
+% COMMENT ANGLES
+% ============================================
+\section{Comment Angles Explained}
+
+The tool uses 21 comment angles. Each produces a different type of comment:
+
+\begin{center}
+\small
+\begin{tabularx}{\textwidth}{lXl}
+\toprule
+\textbf{Angle} & \textbf{What It Does} & \textbf{Best For} \\
+\midrule
+WHISPERED\_TRUTH & Say the quiet part out loud & Tactical posts \\
+HIDDEN\_COST & Point out what they're not seeing & Tactical posts \\
+SECRET\_NOBODY\_ASKED & Share insider knowledge & Tactical posts \\
+LIVED\_IT\_DEEPER & Share harder version of experience & Lessons, stories \\
+ME\_TOO\_DEEPER & Specific parallel experience & Lessons, stories \\
+MINDSET\_SHIFT & Reframe the situation entirely & Any analytical post \\
+INEVITABLE\_NOT\_SURPRISING & Make success feel inevitable & Celebrations \\
+CALL\_OUT\_VALUE & Name the specific value & Celebrations, milestones \\
+ASK\_QUESTION & Ask genuine tactical question & Engagement posts \\
+SHARE\_EXPERIENCE & Parallel experience with data & Any post \\
+ADD\_DATA & Contribute facts or metrics & Data-heavy posts \\
+EARNED\_INSIGHT & Wisdom from experience & Reflective posts \\
+REAL\_RISK & Identify the actual risk & Controversial posts \\
+INTENSIFY\_SURGICAL & Amplify with precision & Hot takes \\
+REFRAME\_SMARTER & Better perspective & Hot takes \\
+VALIDATION & Simple acknowledgment & Any post (short) \\
+\bottomrule
+\end{tabularx}
+\end{center}
+
+% ============================================
+% TONE MATCHING
+% ============================================
+\section{Tone Matching}
+
+The AI detects 7 post writing tones and adapts comment style accordingly:
+
+\begin{center}
+\begin{tabularx}{\textwidth}{lX}
+\toprule
+\textbf{Post Tone} & \textbf{Comment Adapts To} \\
+\midrule
+Casual/Conversational & Short sentences, informal, no corporate speak \\
+Formal/Professional & Polished but still human \\
+Listicle/Breakdown & Flowing text (not a list), go deeper on one item \\
+Storytelling/Narrative & Respond to emotional core, share parallel story \\
+Data-Heavy & Engage with numbers, add context or related data \\
+Motivational & Add substance --- specific example or counterpoint \\
+Humorous/Witty & Match the energy, be playful \\
+\bottomrule
+\end{tabularx}
+\end{center}
+
+% ============================================
+% RAG
+% ============================================
+\section{RAG --- Reference Comments}
+
+The tool uses 1,719 high-engagement reference comments to improve quality.
+
+\textbf{How it works:}
+\begin{enumerate}[leftmargin=1.5em]
+    \item When generating comments for an ``advice\_tactical'' post, the system queries the database
+    \item Finds top 5 comments that got high engagement on similar post types
+    \item Injects them into the prompt as examples
+    \item LLM learns from these real examples and produces better output
+\end{enumerate}
+
+\textbf{Import RAG data:}
+\begin{verbatim}
+POST /api/import-rag
+Content-Type: multipart/form-data
+file: rag_data.csv
+\end{verbatim}
+
+\textbf{Check RAG status:}
+\begin{verbatim}
+GET /api/rag-status
+→ {"total": 1719, "by_type": {"advice_tactical": 419, ...}}
+\end{verbatim}
+
+\begin{warnbox}
+Railway has ephemeral storage. RAG data resets on every deploy. Re-import after each deployment.
+\end{warnbox}
+
+% ============================================
+% LOCAL DEVELOPMENT
+% ============================================
+\section{Local Development}
+
+\subsection{Running Locally}
+
+\begin{verbatim}
+# Terminal 1: FastAPI backend
+cd ~/linkedin-comment-generator/backend
+source venv/bin/activate
+uvicorn main:app --port 8000 --reload
+
+# Terminal 2: Next.js frontend
+cd ~/linkedin-comment-generator
+npm run dev -- -p 3001
+\end{verbatim}
+
+\subsection{Environment Variables}
+
+Create \texttt{backend/.env}:
+\begin{verbatim}
+GROQ_API_KEY=gsk_...
+RAPIDAPI_KEY=...
+RAPIDAPI_HOST=linkedin-scraper-api-real-time-fast-affordable
+              .p.rapidapi.com
+SERPAPI_KEY=...
+\end{verbatim}
+
+\subsection{Viewing Logs}
+All pipeline steps are logged in the FastAPI terminal with colored output:
+\begin{itemize}[leftmargin=1.5em]
+    \item \texttt{[Analyzer]} --- Post analysis results
+    \item \texttt{[Groq]} --- Full prompts and responses with token counts
+    \item \texttt{[RAG]} --- Reference comment retrieval
+    \item \texttt{[Humanizer]} --- Changes applied
+    \item \texttt{[Generator]} --- Angle selection, validation, confidence breakdown
+\end{itemize}
+
+\newpage
+% ============================================
+% COSTING
+% ============================================
+\section{Monthly Costing}
+
+\subsection{Per-Post Cost Breakdown}
+
+\begin{center}
+\begin{tabularx}{\textwidth}{Xlrr}
+\toprule
+\textbf{Service} & \textbf{Calls/Post} & \textbf{Cost/Call} & \textbf{Cost/Post} \\
+\midrule
+RapidAPI LinkedIn Scraper & 1 & \$0.025 & \$0.025 \\
+Groq llama-3.3-70b (analysis) & 1 & \$0.0014 & \$0.0014 \\
+Groq llama-3.3-70b (generation $\times$3) & 3 & \$0.0014 & \$0.0042 \\
+Groq llama-4-scout (vision) & 0.5 avg & \$0.0004 & \$0.0002 \\
+SerpAPI (web search) & 0.5 avg & \$0.015 & \$0.0075 \\
+\midrule
+\textbf{Total per post} & & & \textbf{\$0.038} \\
+\bottomrule
+\end{tabularx}
+\end{center}
+
+\begin{infobox}
+Groq AI is extremely cheap (\$0.59/M input tokens). The biggest cost is RapidAPI and SerpAPI. Vision calls are almost free (\$0.11/M tokens).
+\end{infobox}
+
+\subsection{Monthly Cost by Volume}
+
+\begin{center}
+\begin{tabular}{rrrrrr}
+\toprule
+\textbf{Posts/Mo} & \textbf{API Cost} & \textbf{RapidAPI Plan} & \textbf{Hosting} & \textbf{SerpAPI Plan} & \textbf{Total/Mo} \\
+\midrule
+100 & \$3.80 & Free tier & \$5 & \$25 (starter) & \textbf{\$33.80} \\
+500 & \$19.00 & \$25 (Pro) & \$5 & \$25 (starter) & \textbf{\$74.00} \\
+1,000 & \$38.00 & \$25 (Pro) & \$5 & \$75 (developer) & \textbf{\$143.00} \\
+5,000 & \$190.00 & \$75 (Ultra) & \$20 & \$150 (production) & \textbf{\$435.00} \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\subsection{Cost Optimization Tips}
+\begin{itemize}[leftmargin=1.5em]
+    \item \textbf{Cache aggressively} --- already-scraped posts skip API calls (saves RapidAPI costs)
+    \item \textbf{Skip web search} for celebration/hiring posts (saves SerpAPI costs)
+    \item \textbf{Groq is cheap} --- don't optimize here, it's \$0.006/post for 4 LLM calls
+    \item \textbf{Batch processing} --- upload large CSVs to amortize per-session overhead
+\end{itemize}
+
+\end{document}
