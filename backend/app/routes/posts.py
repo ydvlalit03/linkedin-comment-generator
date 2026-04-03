@@ -9,13 +9,35 @@ log = logging.getLogger("api")
 router = APIRouter()
 
 
+def _post_to_camel(row) -> dict:
+    r = dict(row)
+    return {
+        "id": r["id"],
+        "profileUrl": r["profile_url"],
+        "authorName": r["author_name"],
+        "authorHeadline": r["author_headline"],
+        "authorProfilePic": r["author_profile_pic"],
+        "postText": r["post_text"],
+        "postUrl": r["post_url"],
+        "postUrn": r["post_urn"],
+        "likesCount": r["likes_count"],
+        "commentsCount": r["comments_count"],
+        "sharesCount": r["shares_count"],
+        "mediaType": r["media_type"],
+        "mediaUrls": r["media_urls"],
+        "postedAt": r["posted_at"],
+        "status": r["status"],
+        "batchId": r["batch_id"],
+    }
+
+
 @router.get("/api/posts")
 async def list_posts():
     init_db()
     conn = get_conn()
     rows = conn.execute("SELECT * FROM scraped_posts ORDER BY id DESC").fetchall()
     conn.close()
-    return {"posts": [dict(r) for r in rows]}
+    return {"posts": [_post_to_camel(r) for r in rows]}
 
 
 @router.get("/api/post/{post_id}")
