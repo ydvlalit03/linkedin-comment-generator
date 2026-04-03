@@ -1,54 +1,52 @@
-# Stage 1: Dependencies
-FROM node:20-alpine AS deps
+# Combined Dockerfile — FastAPI backend + Next.js frontend in one container
+
+# Stage 1: Build Next.js
+FROM node:20-alpine AS frontend-builder
 WORKDIR /app
 
-# better-sqlite3 needs build tools
 RUN apk add --no-cache python3 make g++
 
 COPY package.json package-lock.json* ./
 RUN npm ci
 
-# Stage 2: Build
-FROM node:20-alpine AS builder
-WORKDIR /app
-
-RUN apk add --no-cache python3 make g++
-
-COPY --from=deps /app/node_modules ./node_modules
 COPY . .
-
-# Create data directory for SQLite
 RUN mkdir -p data
 
-# Build Next.js
+# Build-time backend URL points to localhost (same container)
+ENV BACKEND_URL=http://localhost:8000
 ENV NEXT_TELEMETRY_DISABLED=1
 RUN npm run build
 
-# Stage 3: Production
-FROM node:20-alpine AS runner
+# Stage 2: Production
+FROM python:3.12-slim
+
 WORKDIR /app
 
-ENV NODE_ENV=production
-ENV NEXT_TELEMETRY_DISABLED=1
+# Install Node.js for Next.js standalone server
+RUN apt-get update && apt-get install -y --no-install-recommends curl && \
+    curl -fsSL https://deb.nodesource.com/setup_20.x | bash - && \
+    apt-get install -y --no-install-recommends nodejs && \
+    apt-get clean && rm -rf /var/lib/apt/lists/*
 
-# better-sqlite3 needs these at runtime
-RUN apk add --no-cache libstdc++
+# Install Python deps
+COPY backend/requirements.txt /app/backend/requirements.txt
+RUN pip install --no-cache-dir -r /app/backend/requirements.txt
 
-RUN addgroup --system --gid 1001 nodejs
-RUN adduser --system --uid 1001 nextjs
+# Copy backend
+COPY backend/ /app/backend/
 
-# Copy built app
-COPY --from=builder /app/public ./public
-COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
-COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
+# Copy Next.js standalone build
+COPY --from=frontend-builder /app/.next/standalone /app/frontend/
+COPY --from=frontend-builder /app/.next/static /app/frontend/.next/static
+COPY --from=frontend-builder /app/public /app/frontend/public
 
-# Create data directory for SQLite (writable by nextjs user)
-RUN mkdir -p data && chown nextjs:nodejs data
+# Create data directory
+RUN mkdir -p /app/data /app/backend/data
 
-USER nextjs
+# Copy start script
+COPY start.sh /app/start.sh
+RUN chmod +x /app/start.sh
 
 EXPOSE 3000
-ENV PORT=3000
-ENV HOSTNAME="0.0.0.0"
 
-CMD ["node", "server.js"]
+CMD ["/app/start.sh"]
