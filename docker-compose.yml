@@ -1,0 +1,17 @@
+services:
+  app:
+    build: .
+    ports:
+      - "3001:3000"
+    environment:
+      - GROQ_API_KEY=${GROQ_API_KEY}
+      - RAPIDAPI_KEY=${RAPIDAPI_KEY}
+      - RAPIDAPI_HOST=${RAPIDAPI_HOST:-linkedin-scraper-api-real-time-fast-affordable.p.rapidapi.com}
+      - SERPAPI_KEY=${SERPAPI_KEY:-}
+    volumes:
+      # Persist SQLite database across container restarts
+      - sqlite-data:/app/data
+    restart: unless-stopped
+
+volumes:
+  sqlite-data:

@@ -1,0 +1,10 @@
+node_modules
+.next
+.git
+*.md
+.env*
+data/*.db
+.DS_Store
+backend/venv
+backend/__pycache__
+backend/data/*.db
