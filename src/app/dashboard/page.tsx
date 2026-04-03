@@ -52,28 +52,11 @@ export default function DashboardPage() {
     setProcessing((prev) => new Set([...prev, postId]));
 
     try {
-      toast.info("Analyzing post...");
-      const analyzeRes = await fetch("/api/analyze-post", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ postId }),
-      });
-      const analyzeData = await analyzeRes.json();
-
-      if (!analyzeRes.ok) {
-        toast.error(analyzeData.error || "Analysis failed");
-        return;
-      }
-
-      toast.info("Generating comments...");
+      toast.info("Analyzing & generating comments...");
       const genRes = await fetch("/api/generate-comments", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          postId,
-          ragContext: analyzeData.ragContext || "",
-          webContext: analyzeData.webContext || "",
-        }),
+        body: JSON.stringify({ post_id: postId }),
       });
       const genData = await genRes.json();
 

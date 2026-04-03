@@ -39,15 +39,30 @@ class CommenterProfile(BaseModel):
 
 class ScrapeRequest(BaseModel):
     profiles: list[dict]
-    batch_id: str
+    batch_id: Optional[str] = None
+    batchId: Optional[str] = None
+
+    @property
+    def get_batch_id(self) -> str:
+        return self.batch_id or self.batchId or "default"
 
 
 class AnalyzeRequest(BaseModel):
-    post_id: int
+    post_id: Optional[int] = None
+    postId: Optional[int] = None
+
+    @property
+    def get_post_id(self) -> int:
+        return self.post_id or self.postId or 0
 
 
 class GenerateRequest(BaseModel):
-    post_id: int
+    post_id: Optional[int] = None
+    postId: Optional[int] = None
+
+    @property
+    def get_post_id(self) -> int:
+        return self.post_id or self.postId or 0
 
 
 class ProfileSaveRequest(BaseModel):

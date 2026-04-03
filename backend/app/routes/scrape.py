@@ -112,7 +112,7 @@ async def scrape_profiles(req: ScrapeRequest):
                  data["post"]["url"] or post_url, data["post"]["urn"],
                  data["stats"]["total_reactions"], data["stats"]["comments"], data["stats"]["shares"],
                  data["post"]["type"], json.dumps(data["media"]),
-                 data["post"]["created_at"], "scraped", req.batch_id)
+                 data["post"]["created_at"], "scraped", req.get_batch_id)
             )
             conn.commit()
             results.append({"id": cursor.lastrowid, "author": data["author"]["name"], "status": "scraped"})
@@ -125,6 +125,6 @@ async def scrape_profiles(req: ScrapeRequest):
         await asyncio.sleep(1.5)  # Rate limit
 
     conn.close()
-    return {"success": True, "batchId": req.batch_id, "scraped": len(results),
+    return {"success": True, "batchId": req.get_batch_id, "scraped": len(results),
             "cached": len(cached), "failed": len(errors),
             "results": results, "cached_posts": cached, "errors": errors}

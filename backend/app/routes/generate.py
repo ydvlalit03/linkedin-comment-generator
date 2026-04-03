@@ -15,7 +15,7 @@ async def generate_comments(req: GenerateRequest):
     conn = get_conn()
 
     # Load post
-    post = conn.execute("SELECT * FROM scraped_posts WHERE id = ?", (req.post_id,)).fetchone()
+    post = conn.execute("SELECT * FROM scraped_posts WHERE id = ?", (req.get_post_id,)).fetchone()
     if not post:
         conn.close()
         return {"error": "Post not found"}, 404
@@ -58,13 +58,13 @@ async def generate_comments(req: GenerateRequest):
 
     # Run LangGraph pipeline
     log.info("=" * 70)
-    log.info(f"RUNNING PIPELINE for post #{req.post_id}")
+    log.info(f"RUNNING PIPELINE for post #{req.get_post_id}")
     log.info("=" * 70)
 
     pipeline = get_pipeline()
 
     initial_state = {
-        "post_id": req.post_id,
+        "post_id": req.get_post_id,
         "post_text": post["post_text"] or "",
         "post_author": {
             "name": post["author_name"] or "",
@@ -105,13 +105,13 @@ async def generate_comments(req: GenerateRequest):
     analysis = result.get("analysis", {})
     conn.execute(
         "UPDATE scraped_posts SET post_analysis = ?, web_search_context = ?, status = 'generated' WHERE id = ?",
-        (json.dumps(analysis), result.get("web_context", ""), req.post_id)
+        (json.dumps(analysis), result.get("web_context", ""), req.get_post_id)
     )
 
     for c in final:
         conn.execute(
             "INSERT INTO generated_comments (post_id, text, angle, variation_number, confidence, approach, post_type, was_humanized, quality_score) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
-            (req.post_id, c["text"], c["angle"], c["variation"], c["confidence"],
+            (req.get_post_id, c["text"], c["angle"], c["variation"], c["confidence"],
              "langgraph", analysis.get("post_type", ""), 1, c["quality_score"])
         )
 
@@ -120,7 +120,7 @@ async def generate_comments(req: GenerateRequest):
 
     return {
         "success": True,
-        "post_id": req.post_id,
+        "post_id": req.get_post_id,
         "count": len(final),
         "analysis": analysis,
         "comments": final,

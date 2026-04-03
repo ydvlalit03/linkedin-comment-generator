@@ -48,23 +48,10 @@ export default function PostDetailPage({
   const handleRegenerate = async () => {
     setRegenerating(true);
     try {
-      // Re-analyze
-      const analyzeRes = await fetch("/api/analyze-post", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ postId: Number(postId) }),
-      });
-      const analyzeData = await analyzeRes.json();
-
-      // Re-generate
       const genRes = await fetch("/api/generate-comments", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          postId: Number(postId),
-          ragContext: analyzeData.ragContext || "",
-          webContext: analyzeData.webContext || "",
-        }),
+        body: JSON.stringify({ post_id: Number(postId) }),
       });
 
       if (genRes.ok) {
