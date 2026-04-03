@@ -13,14 +13,28 @@ from app.graph.state import PipelineState
 
 log = logging.getLogger("graph")
 
+VALID_ANGLES = {
+    "INEVITABLE_NOT_SURPRISING", "REAL_COST", "FAILURE_AS_CURRICULUM",
+    "LIVED_IT_DEEPER", "WHISPERED_TRUTH", "EARNED_INSIGHT",
+    "ME_TOO_DEEPER", "HIDDEN_COST", "MINDSET_SHIFT", "REAL_RISK",
+    "SECRET_NOBODY_ASKED", "INTENSIFY_SURGICAL", "SEE_WHOLE_GAME",
+    "PATTERN_NOT_MAD", "VALIDATION", "SHARE_EXPERIENCE",
+    "ADD_DATA", "ASK_QUESTION", "REFRAME_SMARTER",
+    "CALL_OUT_VALUE", "GENERAL_ENGAGEMENT",
+}
+
 ANGLE_PREFERENCES = {
     "advice_tactical": ["WHISPERED_TRUTH", "HIDDEN_COST", "SECRET_NOBODY_ASKED"],
     "reflective_lessons": ["ME_TOO_DEEPER", "MINDSET_SHIFT", "LIVED_IT_DEEPER"],
-    "celebration_win": ["INEVITABLE_NOT_SURPRISING", "REAL_COST", "CALL_OUT_VALUE"],
+    "celebration_win": ["INEVITABLE_NOT_SURPRISING", "CALL_OUT_VALUE", "VALIDATION"],
     "milestone_announcement": ["INEVITABLE_NOT_SURPRISING", "CALL_OUT_VALUE", "SEE_WHOLE_GAME"],
     "crowd_engagement": ["ASK_QUESTION", "SHARE_EXPERIENCE", "ADD_DATA"],
     "hot_take_controversial": ["INTENSIFY_SURGICAL", "SEE_WHOLE_GAME", "REFRAME_SMARTER"],
     "failure_setback": ["FAILURE_AS_CURRICULUM", "LIVED_IT_DEEPER", "REAL_RISK"],
+    "vulnerable_emotional": ["ME_TOO_DEEPER", "VALIDATION", "EARNED_INSIGHT"],
+    "self_promo_pitch": ["ASK_QUESTION", "CALL_OUT_VALUE", "SHARE_EXPERIENCE"],
+    "gratitude_inspirational": ["VALIDATION", "CALL_OUT_VALUE", "ME_TOO_DEEPER"],
+    "hiring_team": ["CALL_OUT_VALUE", "ASK_QUESTION", "SHARE_EXPERIENCE"],
 }
 
 AI_PHRASES = [
@@ -148,21 +162,38 @@ async def generate_node(state: PipelineState) -> dict:
     rag_angles = state.get("rag_angles", [])
     post_type = analysis.get("post_type", "advice_tactical")
 
-    # Select 3 angles
+    # Select 3 angles — ONLY from our defined set
     angles = []
+    # Filter RAG angles to valid ones only
+    valid_rag = [a for a in rag_angles if a in VALID_ANGLES]
+    # Filter AI-suggested angles to valid ones only
+    ai_angles = [a for a in analysis.get("best_response_angles", []) if a in VALID_ANGLES]
+    # Post type defaults
+    prefs = ANGLE_PREFERENCES.get(post_type, ["WHISPERED_TRUTH", "HIDDEN_COST", "EARNED_INSIGHT"])
+
     for i in range(3):
-        if i < len(rag_angles):
-            angles.append(rag_angles[i])
-        elif i < len(analysis.get("best_response_angles", [])):
-            a = analysis["best_response_angles"][i]
-            if a in ANGLE_PREFERENCES.get(post_type, []) or len(a) > 3:
-                angles.append(a)
-            else:
-                prefs = ANGLE_PREFERENCES.get(post_type, ["WHISPERED_TRUTH", "HIDDEN_COST", "EARNED_INSIGHT"])
-                angles.append(prefs[i % len(prefs)])
+        if i < len(valid_rag):
+            angles.append(valid_rag[i])
+        elif i < len(ai_angles):
+            angles.append(ai_angles[i])
         else:
-            prefs = ANGLE_PREFERENCES.get(post_type, ["WHISPERED_TRUTH", "HIDDEN_COST", "EARNED_INSIGHT"])
             angles.append(prefs[i % len(prefs)])
+
+    # Deduplicate — no repeat angles
+    seen = set()
+    unique = []
+    for a in angles:
+        if a not in seen:
+            seen.add(a)
+            unique.append(a)
+    while len(unique) < 3:
+        for p in prefs:
+            if p not in seen:
+                seen.add(p)
+                unique.append(p)
+                if len(unique) >= 3:
+                    break
+    angles = unique[:3]
 
     log.info(f"Angles: {angles}")
 

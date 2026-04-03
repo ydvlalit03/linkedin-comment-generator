@@ -1,7 +1,9 @@
 """Posts & Profile CRUD routes"""
 import json
+import csv
+import io
 import logging
-from fastapi import APIRouter
+from fastapi import APIRouter, UploadFile, File
 from app.models.schemas import ProfileSaveRequest
 from app.db.database import get_conn, init_db
 
@@ -131,3 +133,49 @@ async def save_feedback(data: dict):
     conn.commit()
     conn.close()
     return {"success": True}
+
+
+@router.post("/api/import-rag")
+async def import_rag(file: UploadFile = File(...)):
+    """Import RAG reference comments from CSV"""
+    content = (await file.read()).decode("utf-8", errors="replace")
+    reader = csv.DictReader(io.StringIO(content))
+
+    conn = get_conn()
+    count = 0
+    for row in reader:
+        try:
+            conn.execute(
+                "INSERT INTO reference_comments (post_content, comment_text, likes, replies, post_type, comment_angle, topic, engagement_score) VALUES (?,?,?,?,?,?,?,?)",
+                (
+                    (row.get("post_content", "") or "")[:500],
+                    row.get("comment_text", ""),
+                    int(row.get("likes", 0) or 0),
+                    int(row.get("replies", 0) or 0),
+                    row.get("post_type", ""),
+                    row.get("comment_angle", ""),
+                    row.get("topic", ""),
+                    float(row.get("engagement_score", 0) or 0),
+                ),
+            )
+            count += 1
+        except Exception:
+            pass
+    conn.commit()
+
+    total = conn.execute("SELECT COUNT(*) FROM reference_comments").fetchone()[0]
+    conn.close()
+
+    log.info(f"RAG import: {count} new rows, {total} total")
+    return {"success": True, "imported": count, "total": total}
+
+
+@router.get("/api/rag-status")
+async def rag_status():
+    conn = get_conn()
+    total = conn.execute("SELECT COUNT(*) FROM reference_comments").fetchone()[0]
+    by_type = conn.execute(
+        "SELECT post_type, COUNT(*) as cnt FROM reference_comments GROUP BY post_type ORDER BY cnt DESC LIMIT 10"
+    ).fetchall()
+    conn.close()
+    return {"total": total, "by_type": {r[0]: r[1] for r in by_type}}
