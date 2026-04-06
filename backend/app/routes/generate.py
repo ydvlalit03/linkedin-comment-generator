@@ -117,6 +117,26 @@ async def generate_comments(req: GenerateRequest):
              "langgraph", analysis.get("post_type", ""), 1, c["quality_score"], final_tone)
         )
 
+    # Auto-seed RAG: save high-quality comments for future retrieval
+    post_type = analysis.get("post_type", "")
+    post_text_snippet = (post["post_text"] or "")[:300]
+    seeded = 0
+    for c in final:
+        if c.get("quality_score", 0) >= 70:
+            # Avoid duplicates — skip if same text already exists
+            exists = conn.execute(
+                "SELECT id FROM reference_comments WHERE comment_text = ?", (c["text"],)
+            ).fetchone()
+            if not exists:
+                conn.execute(
+                    "INSERT INTO reference_comments (post_content, comment_text, likes, replies, post_type, comment_angle, topic, engagement_score) VALUES (?,?,?,?,?,?,?,?)",
+                    (post_text_snippet, c["text"], 0, 0, post_type,
+                     c["angle"], analysis.get("main_topic", ""), round(c["confidence"], 2))
+                )
+                seeded += 1
+    if seeded:
+        log.info(f"RAG auto-seeded {seeded} comments (post_type={post_type})")
+
     conn.commit()
     conn.close()
 
