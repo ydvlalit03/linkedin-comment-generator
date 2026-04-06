@@ -59,6 +59,7 @@ class AnalyzeRequest(BaseModel):
 class GenerateRequest(BaseModel):
     post_id: Optional[int] = None
     postId: Optional[int] = None
+    comment_tone: Optional[str] = None  # user override; None = let LLM decide
 
     @property
     def get_post_id(self) -> int:

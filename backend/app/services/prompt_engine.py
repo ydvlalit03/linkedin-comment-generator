@@ -43,6 +43,17 @@ ANGLE_INSTRUCTIONS = {
     "VALIDATION": "Simple, genuine acknowledgment. Short (15-25 words), specific, no fluff.",
 }
 
+COMMENT_TONE_INSTRUCTIONS = {
+    "humorous": "Be playful and witty. A light joke, clever observation, or self-deprecating moment. Don't force it — if it fits naturally, land it.",
+    "empathetic": "Be warm and human. Acknowledge the feeling behind the post. Show you genuinely understand, not just agree.",
+    "inspirational": "Be energizing and forward-looking. Add substance — a specific example, a challenge to push further, not just empty hype.",
+    "provocative": "Be boldly contrarian or challenging. Pick the strongest idea in the post and sharpen or push back on it. Short and punchy.",
+    "analytical": "Be precise and logical. Break down a key point, add data context, or expose a nuance others miss. Surgeon, not professor.",
+    "celebratory": "Be genuinely enthusiastic but specific. Name exactly WHAT is impressive. Not just 'congrats' — say why this matters.",
+    "direct": "Be straight, sharp, no fluff. Say the thing most people dance around. Respect the reader's time.",
+    "storytelling": "Open with a micro-story or scene. First-person, specific, vivid. Let the insight emerge from the story, not before it.",
+}
+
 VARIATION_STRUCTURES = [
     "Start with a direct statement or observation. No questions to start. Flowing single thought.",
     "Start from personal experience — 'we saw this when...' Build to your insight.",
@@ -59,6 +70,7 @@ def build_prompt(
     rag_context: str = "",
     web_context: str = "",
     author: dict | None = None,
+    comment_tone: str = "direct",
 ) -> str:
     post_type = analysis.get("post_type", "advice_tactical")
     mn, target, mx = WORD_TARGETS.get(post_type, WORD_TARGETS["default"])
@@ -67,6 +79,7 @@ def build_prompt(
     tone_instr = TONE_INSTRUCTIONS.get(analysis.get("post_tone", ""), TONE_INSTRUCTIONS["casual_conversational"])
     angle_instr = ANGLE_INSTRUCTIONS.get(angle, f"Engage with the post using {angle} angle.")
     var_instr = VARIATION_STRUCTURES[variation % len(VARIATION_STRUCTURES)]
+    comment_tone_instr = COMMENT_TONE_INSTRUCTIONS.get(comment_tone, COMMENT_TONE_INSTRUCTIONS["direct"])
 
     examples = profile.get("real_comment_examples", [])
     examples_str = "\n".join(f'   {i+1}. "{ex}"' for i, ex in enumerate(examples[:5])) if examples else ""
@@ -115,7 +128,13 @@ VARIATION {variation+1} INSTRUCTION:
 STRUCTURE: {var_instr}
 
 {'='*70}
-TONE MATCHING (CRITICAL):
+COMMENT TONE (CRITICAL — this is HOW you write):
+{'='*70}
+TONE: {comment_tone.upper()}
+{comment_tone_instr}
+
+{'='*70}
+POST TONE MATCHING:
 {'='*70}
 {tone_instr}
 

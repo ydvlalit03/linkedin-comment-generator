@@ -65,6 +65,12 @@ function Header() {
               Dashboard
             </a>
             <a
+              href="/analytics"
+              className="text-gray-600 hover:text-gray-900 transition-colors"
+            >
+              Analytics
+            </a>
+            <a
               href="/settings"
               className="text-gray-600 hover:text-gray-900 transition-colors"
             >

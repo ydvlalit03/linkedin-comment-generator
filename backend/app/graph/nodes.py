@@ -72,10 +72,21 @@ Return ONLY valid JSON:
   "sentiment": "positive|negative|neutral",
   "emotional_tone": "one word",
   "post_tone": "casual_conversational|formal_professional|listicle_breakdown|storytelling_narrative|data_heavy|motivational_inspirational|humorous_witty",
+  "suggested_comment_tone": "humorous|empathetic|inspirational|provocative|analytical|celebratory|direct|storytelling",
   "specific_details": ["detail1", "detail2", "detail3"],
   "key_insights": ["insight1", "insight2"],
   "best_response_angles": ["ANGLE_1", "ANGLE_2", "ANGLE_3"]
-}}"""
+}}
+
+For suggested_comment_tone: pick the tone that would make the BEST comment on this specific post.
+- humorous: post is light/funny or a witty reply would stand out
+- empathetic: post is vulnerable/emotional/failure — warm tone fits
+- inspirational: post is motivational — uplift and energize
+- provocative: post is a hot take — challenge or intensify
+- analytical: post is data/advice-heavy — break it down logically
+- celebratory: post is a win/milestone — celebrate genuinely
+- direct: post is tactical/instructional — be straight and sharp
+- storytelling: post is a narrative — respond with your own story"""
 
     log.info(f"[PROMPT → Groq] Analysis prompt: {len(prompt)} chars")
 
@@ -95,10 +106,16 @@ Return ONLY valid JSON:
     except:
         analysis = {"post_type": "advice_tactical", "main_topic": "general", "sentiment": "neutral",
                      "emotional_tone": "thoughtful", "post_tone": "casual_conversational",
+                     "suggested_comment_tone": "direct",
                      "specific_details": [], "key_insights": [], "best_response_angles": []}
 
-    log.info(f"Analysis: type={analysis.get('post_type')} | tone={analysis.get('post_tone')} | topic={analysis.get('main_topic')}")
-    return {"analysis": analysis}
+    # If user hasn't overridden tone, use LLM suggestion
+    suggested = analysis.get("suggested_comment_tone", "direct")
+    existing_tone = state.get("comment_tone", "")
+    resolved_tone = existing_tone if existing_tone else suggested
+
+    log.info(f"Analysis: type={analysis.get('post_type')} | post_tone={analysis.get('post_tone')} | suggested_comment_tone={suggested} | resolved={resolved_tone}")
+    return {"analysis": analysis, "comment_tone": resolved_tone}
 
 
 # ==============================
@@ -197,13 +214,16 @@ async def generate_node(state: PipelineState) -> dict:
 
     log.info(f"Angles: {angles}")
 
+    comment_tone = state.get("comment_tone", "direct")
+    log.info(f"Comment tone: {comment_tone}")
+
     # Build prompts for all 3
     tasks = []
     for i, angle in enumerate(angles):
         prompt = build_prompt(
             state["post_text"], analysis, profile, angle, i,
             state.get("rag_context", ""), state.get("web_context", ""),
-            state.get("post_author"),
+            state.get("post_author"), comment_tone,
         )
         temp = 0.7 + i * 0.15
         log.info(f"[Variation {i+1}] angle={angle} | temp={temp:.2f} | prompt={len(prompt)} chars")

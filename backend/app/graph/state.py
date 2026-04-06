@@ -22,6 +22,9 @@ class PipelineState(TypedDict):
     # Generation — uses Annotated + operator.add to APPEND (not replace)
     comments: Annotated[list[dict], operator.add]
 
+    # Tone override (user-selected or LLM-suggested)
+    comment_tone: str
+
     # Control
     retry_count: int
     errors: Annotated[list[str], operator.add]

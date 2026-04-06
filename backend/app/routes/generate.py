@@ -77,6 +77,7 @@ async def generate_comments(req: GenerateRequest):
         "rag_angles": [],
         "profile": profile,
         "comments": [],
+        "comment_tone": req.comment_tone or "",  # empty = LLM decides in analyze_node
         "retry_count": 0,
         "errors": [],
     }
@@ -108,11 +109,12 @@ async def generate_comments(req: GenerateRequest):
         (json.dumps(analysis), result.get("web_context", ""), req.get_post_id)
     )
 
+    final_tone = result.get("comment_tone", req.comment_tone or "")
     for c in final:
         conn.execute(
-            "INSERT INTO generated_comments (post_id, text, angle, variation_number, confidence, approach, post_type, was_humanized, quality_score) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "INSERT INTO generated_comments (post_id, text, angle, variation_number, confidence, approach, post_type, was_humanized, quality_score, comment_tone) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (req.get_post_id, c["text"], c["angle"], c["variation"], c["confidence"],
-             "langgraph", analysis.get("post_type", ""), 1, c["quality_score"])
+             "langgraph", analysis.get("post_type", ""), 1, c["quality_score"], final_tone)
         )
 
     conn.commit()
@@ -123,5 +125,6 @@ async def generate_comments(req: GenerateRequest):
         "post_id": req.get_post_id,
         "count": len(final),
         "analysis": analysis,
+        "comment_tone": final_tone,
         "comments": final,
     }

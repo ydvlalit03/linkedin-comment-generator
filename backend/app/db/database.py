@@ -58,6 +58,7 @@ def init_db():
             post_type TEXT DEFAULT '',
             was_humanized INTEGER DEFAULT 0,
             quality_score INTEGER DEFAULT 0,
+            comment_tone TEXT DEFAULT '',
             created_at TEXT DEFAULT (datetime('now'))
         );
         CREATE TABLE IF NOT EXISTS comment_feedback (
@@ -91,4 +92,12 @@ def init_db():
         );
     """)
     conn.commit()
+
+    # Migrations for existing databases
+    try:
+        conn.execute("ALTER TABLE generated_comments ADD COLUMN comment_tone TEXT DEFAULT ''")
+        conn.commit()
+    except Exception:
+        pass  # Column already exists
+
     conn.close()

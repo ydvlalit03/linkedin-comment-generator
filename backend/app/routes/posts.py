@@ -66,6 +66,14 @@ async def get_post(post_id: int):
     except:
         pass
 
+    # Extract suggested_comment_tone from analysis for the UI
+    suggested_tone = analysis.get("suggested_comment_tone", "") if analysis else ""
+
+    # Get the tone used in most recent batch of comments
+    used_tone = ""
+    if comments:
+        used_tone = comments[-1]["comment_tone"] if "comment_tone" in comments[-1].keys() else ""
+
     conn.close()
 
     return {
@@ -80,12 +88,15 @@ async def get_post(post_id: int):
         },
         "analysis": analysis,
         "media": media,
+        "suggestedCommentTone": suggested_tone,
+        "usedCommentTone": used_tone,
         "comments": [
             {
                 "id": c["id"], "text": c["text"], "angle": c["angle"],
                 "variationNumber": c["variation_number"],
                 "confidence": c["confidence"], "approach": c["approach"],
                 "postType": c["post_type"],
+                "commentTone": c["comment_tone"] if "comment_tone" in c.keys() else "",
                 "validation": {"qualityScore": c["quality_score"], "wordCount": len((c["text"] or "").split())},
             }
             for c in comments
@@ -168,6 +179,111 @@ async def import_rag(file: UploadFile = File(...)):
 
     log.info(f"RAG import: {count} new rows, {total} total")
     return {"success": True, "imported": count, "total": total}
+
+
+@router.put("/api/comments/{comment_id}")
+async def update_comment(comment_id: int, data: dict):
+    """Update comment text (inline edit)"""
+    conn = get_conn()
+    text = data.get("text", "").strip()
+    if not text:
+        conn.close()
+        return {"error": "Text required"}, 400
+    conn.execute("UPDATE generated_comments SET text = ? WHERE id = ?", (text, comment_id))
+    conn.commit()
+    conn.close()
+    return {"success": True}
+
+
+@router.get("/api/analytics")
+async def get_analytics():
+    """Analytics data for the dashboard"""
+    init_db()
+    conn = get_conn()
+
+    total_posts = conn.execute("SELECT COUNT(*) FROM scraped_posts").fetchone()[0]
+    total_comments = conn.execute("SELECT COUNT(*) FROM generated_comments").fetchone()[0]
+    total_feedback = conn.execute("SELECT COUNT(*) FROM comment_feedback").fetchone()[0]
+
+    # Angle performance: count + avg confidence + avg quality
+    angle_rows = conn.execute("""
+        SELECT angle, COUNT(*) as count,
+               ROUND(AVG(confidence), 2) as avg_confidence,
+               ROUND(AVG(quality_score), 1) as avg_quality
+        FROM generated_comments
+        GROUP BY angle
+        ORDER BY count DESC
+    """).fetchall()
+
+    # Post type distribution
+    post_type_rows = conn.execute("""
+        SELECT post_type, COUNT(*) as count
+        FROM generated_comments
+        WHERE post_type != ''
+        GROUP BY post_type
+        ORDER BY count DESC
+    """).fetchall()
+
+    # Quality distribution
+    quality_rows = conn.execute("""
+        SELECT
+            SUM(CASE WHEN quality_score >= 80 THEN 1 ELSE 0 END) as excellent,
+            SUM(CASE WHEN quality_score >= 60 AND quality_score < 80 THEN 1 ELSE 0 END) as good,
+            SUM(CASE WHEN quality_score >= 40 AND quality_score < 60 THEN 1 ELSE 0 END) as fair,
+            SUM(CASE WHEN quality_score < 40 THEN 1 ELSE 0 END) as poor
+        FROM generated_comments
+    """).fetchone()
+
+    # Tone distribution
+    tone_rows = conn.execute("""
+        SELECT comment_tone, COUNT(*) as count
+        FROM generated_comments
+        WHERE comment_tone != ''
+        GROUP BY comment_tone
+        ORDER BY count DESC
+    """).fetchall()
+
+    # Feedback stats
+    feedback_rows = conn.execute("""
+        SELECT
+            SUM(CASE WHEN rating = 1 THEN 1 ELSE 0 END) as positive,
+            SUM(CASE WHEN rating = -1 THEN 1 ELSE 0 END) as negative,
+            SUM(CASE WHEN rating = 0 THEN 1 ELSE 0 END) as neutral
+        FROM comment_feedback
+    """).fetchone()
+
+    # Avg confidence overall
+    avg_conf_row = conn.execute("SELECT ROUND(AVG(confidence), 2) FROM generated_comments").fetchone()
+    avg_confidence = avg_conf_row[0] or 0
+
+    conn.close()
+
+    return {
+        "totals": {
+            "posts": total_posts,
+            "comments": total_comments,
+            "feedback": total_feedback,
+            "avgConfidence": avg_confidence,
+        },
+        "angles": [
+            {"angle": r["angle"], "count": r["count"],
+             "avgConfidence": r["avg_confidence"], "avgQuality": r["avg_quality"]}
+            for r in angle_rows
+        ],
+        "postTypes": [{"postType": r["post_type"], "count": r["count"]} for r in post_type_rows],
+        "qualityDistribution": {
+            "excellent": quality_rows["excellent"] or 0,
+            "good": quality_rows["good"] or 0,
+            "fair": quality_rows["fair"] or 0,
+            "poor": quality_rows["poor"] or 0,
+        } if quality_rows else {"excellent": 0, "good": 0, "fair": 0, "poor": 0},
+        "tones": [{"tone": r["comment_tone"], "count": r["count"]} for r in tone_rows],
+        "feedback": {
+            "positive": feedback_rows["positive"] or 0,
+            "negative": feedback_rows["negative"] or 0,
+            "neutral": feedback_rows["neutral"] or 0,
+        } if feedback_rows else {"positive": 0, "negative": 0, "neutral": 0},
+    }
 
 
 @router.get("/api/rag-status")

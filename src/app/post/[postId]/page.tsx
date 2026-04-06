@@ -6,7 +6,7 @@ import { PostMedia } from "@/components/post/post-media";
 import { CommentCard } from "@/components/comments/comment-card";
 import { FullPageLoader } from "@/components/shared/loading-spinner";
 import { Badge, AngleBadge } from "@/components/shared/badge";
-import { Sparkles, ArrowLeft } from "lucide-react";
+import { Sparkles, ArrowLeft, Mic2 } from "lucide-react";
 import { toast } from "sonner";
 import Link from "next/link";
 
@@ -15,7 +15,20 @@ interface PostDetail {
   analysis: any;
   comments: any[];
   media: any[];
+  suggestedCommentTone: string;
+  usedCommentTone: string;
 }
+
+const TONES = [
+  { value: "humorous",     label: "Humorous",     emoji: "😄" },
+  { value: "empathetic",   label: "Empathetic",   emoji: "🤝" },
+  { value: "inspirational",label: "Inspirational",emoji: "✨" },
+  { value: "provocative",  label: "Provocative",  emoji: "🔥" },
+  { value: "analytical",   label: "Analytical",   emoji: "🧠" },
+  { value: "celebratory",  label: "Celebratory",  emoji: "🎉" },
+  { value: "direct",       label: "Direct",       emoji: "⚡" },
+  { value: "storytelling", label: "Storytelling", emoji: "📖" },
+];
 
 export default function PostDetailPage({
   params,
@@ -26,6 +39,8 @@ export default function PostDetailPage({
   const [data, setData] = useState<PostDetail | null>(null);
   const [loading, setLoading] = useState(true);
   const [regenerating, setRegenerating] = useState(false);
+  const [selectedTone, setSelectedTone] = useState<string>("");
+  const [toneChanged, setToneChanged] = useState(false);
 
   useEffect(() => {
     loadPost();
@@ -37,6 +52,10 @@ export default function PostDetailPage({
       if (res.ok) {
         const json = await res.json();
         setData(json);
+        // Set tone: prefer last-used tone, fallback to LLM suggestion
+        const tone = json.usedCommentTone || json.suggestedCommentTone || "direct";
+        setSelectedTone(tone);
+        setToneChanged(false);
       }
     } catch {
       toast.error("Failed to load post");
@@ -45,24 +64,33 @@ export default function PostDetailPage({
     }
   };
 
-  const handleRegenerate = async () => {
+  const handleRegenerate = async (toneOverride?: string) => {
     setRegenerating(true);
     try {
+      const tone = toneOverride ?? selectedTone;
       const genRes = await fetch("/api/generate-comments", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ post_id: Number(postId) }),
+        body: JSON.stringify({ post_id: Number(postId), comment_tone: tone }),
       });
 
       if (genRes.ok) {
-        toast.success("Comments regenerated!");
-        loadPost();
+        toast.success(`Comments regenerated with ${tone} tone!`);
+        await loadPost();
+        setToneChanged(false);
+      } else {
+        toast.error("Regeneration failed");
       }
     } catch {
       toast.error("Regeneration failed");
     } finally {
       setRegenerating(false);
     }
+  };
+
+  const handleToneChange = (tone: string) => {
+    setSelectedTone(tone);
+    setToneChanged(tone !== (data?.usedCommentTone || data?.suggestedCommentTone || "direct"));
   };
 
   if (loading) return <FullPageLoader text="Loading post..." />;
@@ -75,6 +103,7 @@ export default function PostDetailPage({
   }
 
   const { post, analysis, comments, media } = data;
+  const currentToneObj = TONES.find((t) => t.value === selectedTone);
 
   return (
     <div className="max-w-4xl mx-auto px-4 py-8">
@@ -126,19 +155,66 @@ export default function PostDetailPage({
         </div>
       )}
 
+      {/* Comment Tone Selector */}
+      <div className="mt-4 bg-white rounded-xl border border-gray-200 p-4">
+        <div className="flex items-center gap-2 mb-3">
+          <Mic2 className="h-4 w-4 text-gray-500" />
+          <h3 className="font-medium text-gray-900 text-sm">Comment Tone</h3>
+          {data.suggestedCommentTone && (
+            <span className="text-xs text-gray-400 bg-gray-100 px-2 py-0.5 rounded-full">
+              AI suggested: {data.suggestedCommentTone}
+            </span>
+          )}
+        </div>
+        <div className="flex flex-wrap gap-2">
+          {TONES.map((tone) => (
+            <button
+              key={tone.value}
+              onClick={() => handleToneChange(tone.value)}
+              className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium transition-all border ${
+                selectedTone === tone.value
+                  ? "bg-blue-600 text-white border-blue-600"
+                  : "bg-white text-gray-600 border-gray-200 hover:border-blue-300 hover:text-blue-600"
+              }`}
+            >
+              <span>{tone.emoji}</span>
+              {tone.label}
+            </button>
+          ))}
+        </div>
+        {toneChanged && (
+          <p className="text-xs text-blue-600 mt-2">
+            Tone changed — regenerate to apply.
+          </p>
+        )}
+      </div>
+
       {/* Generated Comments */}
       <div className="mt-8">
         <div className="flex items-center justify-between mb-4">
           <h2 className="text-lg font-bold text-gray-900">
             Generated Comments ({comments.length})
+            {currentToneObj && (
+              <span className="ml-2 text-sm font-normal text-gray-500">
+                · {currentToneObj.emoji} {currentToneObj.label}
+              </span>
+            )}
           </h2>
           <button
-            onClick={handleRegenerate}
+            onClick={() => handleRegenerate()}
             disabled={regenerating}
-            className="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 disabled:opacity-50 transition-colors"
+            className={`inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-colors disabled:opacity-50 ${
+              toneChanged
+                ? "bg-blue-600 text-white hover:bg-blue-700 ring-2 ring-blue-300"
+                : "bg-blue-600 text-white hover:bg-blue-700"
+            }`}
           >
             <Sparkles className="h-4 w-4" />
-            {regenerating ? "Regenerating..." : "Regenerate All"}
+            {regenerating
+              ? "Regenerating..."
+              : toneChanged
+              ? `Regenerate as ${currentToneObj?.label}`
+              : "Regenerate All"}
           </button>
         </div>
 
@@ -150,10 +226,10 @@ export default function PostDetailPage({
           <div className="grid grid-cols-1 gap-4">
             {comments.map((comment: any, idx: number) => (
               <CommentCard
-                key={idx}
+                key={comment.id ?? idx}
                 comment={comment}
                 commentId={comment.id}
-                onRegenerate={handleRegenerate}
+                onRegenerate={() => handleRegenerate()}
               />
             ))}
           </div>
