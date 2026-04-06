@@ -56,7 +56,19 @@ async def get_post(post_id: int):
 
     analysis = None
     try:
-        analysis = json.loads(post["post_analysis"] or "null")
+        raw = json.loads(post["post_analysis"] or "null")
+        if raw:
+            analysis = {
+                "postType":             raw.get("post_type", ""),
+                "mainTopic":            raw.get("main_topic", ""),
+                "sentiment":            raw.get("sentiment", ""),
+                "emotionalTone":        raw.get("emotional_tone", ""),
+                "postTone":             raw.get("post_tone", ""),
+                "suggestedCommentTone": raw.get("suggested_comment_tone", ""),
+                "specificDetails":      raw.get("specific_details", []),
+                "keyInsights":          raw.get("key_insights", []),
+                "bestResponseAngles":   raw.get("best_response_angles", []),
+            }
     except:
         pass
 
@@ -67,7 +79,7 @@ async def get_post(post_id: int):
         pass
 
     # Extract suggested_comment_tone from analysis for the UI
-    suggested_tone = analysis.get("suggested_comment_tone", "") if analysis else ""
+    suggested_tone = analysis.get("suggestedCommentTone", "") if analysis else ""
 
     # Get the tone used in most recent batch of comments
     used_tone = ""
